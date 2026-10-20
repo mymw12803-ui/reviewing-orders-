@@ -1,0 +1,147 @@
+/* ==========================================================================
+   Bosta Courier Handover Manifest - Print Stylesheet (Khiam Store)
+   ========================================================================== */
+
+@media print {
+  /* Hide all dashboard interactive UI, headers, banners, buttons */
+  header,
+  #lastScanHud,
+  #noOrderState,
+  #activeOrderContainer,
+  #productCardsGrid,
+  #toastContainer,
+  #flashOverlay,
+  .no-print,
+  button,
+  input,
+  form {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Cairo', 'DejaVu Sans', 'Arial', sans-serif !important;
+    direction: rtl !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    font-size: 11pt !important;
+  }
+
+  /* Make print manifest container visible */
+  #printManifestContainer {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    page-break-after: avoid;
+  }
+
+  .manifest-header {
+    border-bottom: 2px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .manifest-title {
+    font-size: 18pt;
+    font-weight: 900;
+    margin: 0;
+  }
+
+  .manifest-subtitle {
+    font-size: 10pt;
+    color: #333;
+    margin: 3px 0 0 0;
+  }
+
+  .manifest-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+    border: 1px solid #ccc;
+    padding: 8px;
+    background: #fafafa;
+  }
+
+  .manifest-summary-item {
+    font-size: 10pt;
+  }
+
+  .manifest-summary-item strong {
+    display: block;
+    font-size: 8pt;
+    color: #555;
+  }
+
+  .manifest-summary-item span {
+    font-size: 12pt;
+    font-weight: bold;
+    font-family: monospace;
+  }
+
+  table.manifest-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 10px;
+    font-size: 9.5pt !important;
+  }
+
+  table.manifest-table th,
+  table.manifest-table td {
+    border: 1px solid #000 !important;
+    padding: 5px 7px !important;
+    text-align: right;
+  }
+
+  table.manifest-table th {
+    background-color: #eee !important;
+    font-weight: bold;
+  }
+
+  table.manifest-table tr:nth-child(even) {
+    background-color: #fcfcfc !important;
+  }
+
+  .manifest-signatures {
+    margin-top: 35px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    page-break-inside: avoid;
+  }
+
+  .signature-box {
+    border: 1px dashed #666;
+    padding: 12px;
+    border-radius: 4px;
+    min-height: 80px;
+  }
+
+  .signature-title {
+    font-weight: bold;
+    font-size: 10pt;
+    margin-bottom: 30px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+  }
+
+  .signature-line {
+    font-size: 9pt;
+    color: #444;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}
+
+/* Hidden by default on screen */
+#printManifestContainer {
+  display: none;
+}

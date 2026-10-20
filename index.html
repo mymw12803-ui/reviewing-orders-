@@ -16,11 +16,16 @@
   <!-- PapaParse for CSV Parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
+  <!-- Dexie.js for Lightning Fast IndexedDB Offline Storage -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+
   <!-- PDF.js for Bosta Shipping Label Notes Extraction -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
+  <!-- Dedicated Print CSS for Bosta Handover Manifest -->
+  <link rel="stylesheet" href="print.css">
+
   <script>
-    // Configure PDF.js worker
     if (window.pdfjsLib) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
@@ -40,11 +45,6 @@
               600: '#991b1b',
               700: '#7f1d1d',
               900: '#450a0a',
-            },
-            warehouse: {
-              bg: '#0f172a',
-              card: '#1e293b',
-              border: '#334155',
             }
           },
           animation: {
@@ -62,12 +62,11 @@
       user-select: none;
     }
     
-    /* Screen Flash Effects */
     .flash-red-active {
       animation: flashRedAnim 0.4s ease-out;
     }
     @keyframes flashRedAnim {
-      0% { background-color: rgba(239, 68, 68, 0.7); }
+      0% { background-color: rgba(239, 68, 68, 0.75); }
       100% { background-color: transparent; }
     }
 
@@ -75,11 +74,10 @@
       animation: flashGreenAnim 0.4s ease-out;
     }
     @keyframes flashGreenAnim {
-      0% { background-color: rgba(34, 197, 94, 0.4); }
+      0% { background-color: rgba(34, 197, 94, 0.45); }
       100% { background-color: transparent; }
     }
 
-    /* Custom scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -93,10 +91,6 @@
     }
     ::-webkit-scrollbar-thumb:hover {
       background: #64748b;
-    }
-
-    .img-zoom-hover:hover {
-      transform: scale(1.04);
     }
   </style>
 </head>
@@ -135,10 +129,16 @@
           <span id="scannerStatusText">قارئ الباركود جاهز</span>
         </div>
 
-        <!-- Product Lookup Mode Toggle Button -->
-        <button id="toggleLookupModeBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition" title="مسح صنف لمعرفة مكانه في الأوردرات وتفاصيله">
+        <!-- "Lost Item" Finder Mode Toggle Button -->
+        <button id="toggleLookupModeBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition" title="مسح صنف تائه لمعرفة العميل والبوليصة المطلوبة فيه">
           <span>🔍</span>
-          <span id="lookupModeBtnText">استعلام عن منتج</span>
+          <span id="lookupModeBtnText">استعلام عن صنف تائه</span>
+        </button>
+
+        <!-- Print Courier Handover Manifest Button -->
+        <button id="printManifestBtn" class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-black shadow-md transition" title="طباعة كشف تسليم الشحنات لمندوب بوسطة">
+          <span>🖨️</span>
+          <span>كشف تسليم المندوب</span>
         </button>
 
         <!-- Shopify Catalog Status Button -->
@@ -147,9 +147,15 @@
           <span id="headerCatalogCount" class="font-mono font-bold text-white">0</span>
         </button>
 
+        <!-- Voice Toggle Button -->
+        <button id="toggleVoiceBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-200 transition" title="تشغيل / كتم الصوت العربي الناطق">
+          <span id="voiceStatusIcon">🗣️</span>
+          <span id="voiceStatusText">صوت: مفعّل</span>
+        </button>
+
         <!-- Sound Toggle & Test -->
         <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
-          <button id="toggleSoundBtn" title="كتم / تشغيل الصوت" class="p-1.5 rounded hover:bg-slate-700 text-slate-200 transition">
+          <button id="toggleSoundBtn" title="كتم / تشغيل نغمات النظام" class="p-1.5 rounded hover:bg-slate-700 text-slate-200 transition">
             <svg id="soundIconOn" class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
             </svg>
@@ -157,10 +163,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
             </svg>
-          </button>
-
-          <button id="testAudioBtn" title="تجربة أصوات النظام" class="px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-700 rounded transition">
-            🎵 تجربة
           </button>
         </div>
 
@@ -246,7 +248,7 @@
             <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
             </svg>
-            <span class="font-bold text-sm text-slate-200">تحميل ملفات الشحنات (CSV و PDF)</span>
+            <span class="font-bold text-sm text-slate-200">تحميل شيت الشحنات وملفات البوالص</span>
           </div>
           <span id="csvFileName" class="text-xs text-slate-400 truncate max-w-[200px]">لم يتم اختيار ملف</span>
         </div>
@@ -333,7 +335,7 @@
       </div>
       <h2 class="text-2xl font-black text-white mb-2">في انتظار مسح بوليصة الشحن (Bosta)</h2>
       <p class="text-slate-400 text-sm max-w-md leading-relaxed mb-6">
-        قم بمسح الباركود الموجود على بوليصة الشحن لفتح الأوردر وبدء مطابقة وفحص المنتجات المطلوبة مع صورها ومقاساتها وألوانها.
+        قم بمسح الباركود الموجود على بوليصة الشحن لفتح الأوردر وبدء مطابقة وفحص المنتجات المطلوبة مع صورها ومقاساتها وألوانها والتوجيه الصوتي العربي.
       </p>
       <div class="flex items-center gap-2 text-xs bg-slate-800/80 text-slate-300 border border-slate-700 px-4 py-2 rounded-xl">
         <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
@@ -350,7 +352,7 @@
         <!-- Background accent subtle gradient -->
         <div class="absolute -top-24 -left-24 w-72 h-72 bg-rose-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <!-- Bosta PDF Special Notes Alert Box (Extracted from PDF Labels) -->
+        <!-- Bosta PDF Special Notes Alert Box -->
         <div id="bostaPdfNotesAlert" class="hidden mb-4 bg-gradient-to-r from-rose-900/90 to-amber-900/90 border-2 border-rose-500 text-white p-4 rounded-2xl shadow-xl flex items-start gap-3 animate-pulse">
           <div class="w-9 h-9 rounded-xl bg-rose-500 flex items-center justify-center text-xl flex-shrink-0 mt-0.5">
             ⚠️
@@ -367,9 +369,9 @@
         <div id="exchangeBadge" class="hidden mb-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-base lg:text-lg px-5 py-3 rounded-2xl shadow-lg shadow-orange-950/40 flex items-center justify-between animate-pulse">
           <div class="flex items-center gap-3">
             <span class="text-2xl">⚠️</span>
-            <span>تنبيه هام: أوردر تبديل شحنة (EXCHANGE ORDER)</span>
+            <span>تنبيه: أوردر تبديل شحنة - تأكد من استلام المرتجع / تسليم القطعة البديلة</span>
           </div>
-          <span class="text-xs bg-white/20 px-3 py-1 rounded-full uppercase tracking-wider">يرجى التأكد من استلام المرتجع</span>
+          <span class="text-xs bg-white/20 px-3 py-1 rounded-full uppercase tracking-wider font-bold">EXCHANGE ORDER</span>
         </div>
 
         <!-- Order Complete Banner (Shown when 100% finished) -->
@@ -377,8 +379,8 @@
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-2xl">✅</div>
             <div>
-              <div>تم اجتياز وفحص الأوردر بالكامل بنجاح 100%</div>
-              <p class="text-xs text-emerald-100 font-normal">تم تجهيز كافة القطع المطلوبة وحفظ الأوردر في السجل</p>
+              <div>تم اكتمال الأوردر بنجاح! أغلق الكيس وضع البوليصة</div>
+              <p class="text-xs text-emerald-100 font-normal">جاهز للشحن (READY_FOR_SHIPPING) وتم تسجيل وقت الإتمام في السجل</p>
             </div>
           </div>
           <button id="nextOrderBtn" class="bg-white text-emerald-800 hover:bg-emerald-50 font-black text-sm px-5 py-2.5 rounded-xl shadow transition">
@@ -467,6 +469,69 @@
 
   </main>
 
+  <!-- Print Container: Bosta Courier Handover Manifest (Rendered for Print) -->
+  <div id="printManifestContainer">
+    <div class="manifest-header">
+      <div>
+        <h1 class="manifest-title">خيام ستور | كشف تسليم شحنات بوسطة</h1>
+        <p class="manifest-subtitle">Bosta Handover Delivery Manifest - Khiam Store Warehouse</p>
+      </div>
+      <div style="text-align: left; font-size: 9pt;">
+        <div><strong>تاريخ التسليم:</strong> <span id="printDate"></span></div>
+        <div><strong>رقم الدفعة:</strong> <span id="printBatchRef">REF-196</span></div>
+      </div>
+    </div>
+
+    <div class="manifest-summary-grid">
+      <div class="manifest-summary-item">
+        <strong>إجمالي الشحنات:</strong>
+        <span id="printTotalShipments">0</span>
+      </div>
+      <div class="manifest-summary-item">
+        <strong>الشحنات المكتملة:</strong>
+        <span id="printCompletedShipments">0</span>
+      </div>
+      <div class="manifest-summary-item">
+        <strong>إجمالي عدد القطع:</strong>
+        <span id="printTotalPieces">0</span>
+      </div>
+      <div class="manifest-summary-item">
+        <strong>شركة الشحن:</strong>
+        <span>BOSTA COURIER</span>
+      </div>
+    </div>
+
+    <table class="manifest-table">
+      <thead>
+        <tr>
+          <th style="width: 30px;">#</th>
+          <th style="width: 110px;">رقم البوليصة (AWB)</th>
+          <th style="width: 90px;">رقم الأوردر</th>
+          <th>اسم العميل</th>
+          <th style="width: 100px;">رقم الهاتف</th>
+          <th style="width: 45px;">القطع</th>
+          <th style="width: 75px;">الحالة</th>
+        </tr>
+      </thead>
+      <tbody id="printManifestTableBody">
+        <!-- Rendered rows -->
+      </tbody>
+    </table>
+
+    <div class="manifest-signatures">
+      <div class="signature-box">
+        <div class="signature-title">توقيع مسؤول مخزن خيام ستور:</div>
+        <div class="signature-line">الاسم: ....................................................</div>
+        <div class="signature-line" style="margin-top: 10px;">التوقيع: ................................................</div>
+      </div>
+      <div class="signature-box">
+        <div class="signature-title">توقيع واستلام مندوب شركة بوسطة:</div>
+        <div class="signature-line">الاسم: ....................................................</div>
+        <div class="signature-line" style="margin-top: 10px;">التوقيع: ................................................</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Remaining / Unscanned Orders Modal -->
   <div id="remainingOrdersModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl max-h-[88vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
@@ -511,13 +576,13 @@
     </div>
   </div>
 
-  <!-- Product Lookup Modal (وضع استعلام عن منتج) -->
+  <!-- "Lost Item" Finder Modal (وضع استعلام عن الصنف التائه) -->
   <div id="productLookupModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-cyan-500/50 w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
       <div class="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-xl">🔍</span>
-          <h3 class="font-extrabold text-white text-base">استعلام فوري عن منتج ومطابقته بالأوردرات</h3>
+          <h3 class="font-extrabold text-white text-base">استعلام فوري عن الصنف التائه ومطابقته بالشحنات</h3>
         </div>
         <button id="closeLookupModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl text-lg font-bold">✕</button>
       </div>
@@ -532,46 +597,39 @@
               <span class="bg-slate-800 font-mono text-amber-300 px-2 py-0.5 rounded font-bold" id="lookupProductSku">SKU: --</span>
               <span id="lookupMatchLevel" class="text-slate-400 text-[11px]"></span>
             </div>
-            <div id="lookupBadges" class="flex items-center gap-2 pt-1">
-              <!-- Color / Size badges -->
-            </div>
+            <div id="lookupBadges" class="flex items-center gap-2 pt-1"></div>
           </div>
         </div>
 
-        <!-- Orders that contain this item in today's sheet -->
+        <!-- Orders needing this SKU -->
         <div>
-          <h5 class="text-xs font-bold text-slate-300 mb-2">الأوردرات التي تحتاج هذا الصنف في شيت اليوم:</h5>
-          <div id="lookupOrdersList" class="space-y-2 max-h-56 overflow-y-auto">
-            <!-- Dynamic list of orders needing this SKU -->
-          </div>
+          <h5 class="text-xs font-bold text-slate-300 mb-2">الأوردرات التي تحتاج هذا الصنف في دفعة اليوم:</h5>
+          <div id="lookupOrdersList" class="space-y-2 max-h-56 overflow-y-auto"></div>
         </div>
 
       </div>
     </div>
   </div>
 
-  <!-- Shopify Catalog Sync & Management Modal -->
+  <!-- Shopify Catalog Sync Modal -->
   <div id="catalogModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
       
-      <!-- Modal Header -->
       <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center text-xl">
             🛍️
           </div>
           <div>
-            <h3 class="font-extrabold text-white text-base">مزامنة كتالوج صور شوبيفاي</h3>
+            <h3 class="font-extrabold text-white text-base">مزامنة كتالوج صور شوبيفاي (Dexie.js)</h3>
             <p class="text-xs text-slate-400">سحب المنتجات والـ Variants والصور من https://khiam.store</p>
           </div>
         </div>
         <button id="closeCatalogModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition text-lg font-bold">✕</button>
       </div>
 
-      <!-- Modal Body -->
       <div class="p-6 space-y-5">
         
-        <!-- Live Status Counter Box -->
         <div class="bg-slate-950/80 border border-purple-900/40 rounded-2xl p-4 flex items-center justify-around text-center">
           <div>
             <span class="text-xs text-slate-400 block mb-0.5">المنتجات المخزنة</span>
@@ -589,7 +647,6 @@
           </div>
         </div>
 
-        <!-- Store Domain Input -->
         <div>
           <label class="block text-xs font-bold text-slate-300 mb-1.5">رابط متجر شوبيفاي (Shopify Domain):</label>
           <input 
@@ -598,10 +655,8 @@
             value="khiam.store" 
             class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono outline-none"
           >
-          <span class="text-[11px] text-slate-400 mt-1 block">يتم استدعاء: <code class="text-purple-300">/products.json?limit=250</code> مع تخطي CORS تلقائياً.</span>
         </div>
 
-        <!-- Live Sync Progress Line -->
         <div id="syncProgressContainer" class="hidden space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
           <div class="flex justify-between text-xs text-purple-300 font-bold">
             <span id="syncProgressStatus">جاري بدء المزامنة...</span>
@@ -612,7 +667,6 @@
           </div>
         </div>
 
-        <!-- Action Buttons -->
         <div class="space-y-2.5 pt-2">
           <button 
             id="startSyncCatalogBtn" 
@@ -665,7 +719,6 @@
   <div id="historyModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
       
-      <!-- Modal Header -->
       <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center font-bold">
@@ -673,7 +726,7 @@
           </div>
           <div>
             <h3 class="font-extrabold text-white text-base">سجل الأوردرات المجهزة اليوم</h3>
-            <p class="text-xs text-slate-400">قائمة الشحنات التي تم فحصها واجتيازها بالكامل</p>
+            <p class="text-xs text-slate-400">الشحنات الجاهزة للتسليم (READY_FOR_SHIPPING)</p>
           </div>
         </div>
 
@@ -690,7 +743,6 @@
         </div>
       </div>
 
-      <!-- History Table Container -->
       <div class="flex-1 overflow-y-auto p-4">
         <table class="w-full text-right text-xs">
           <thead>
@@ -715,58 +767,8 @@
     </div>
   </div>
 
-  <!-- Audio Test Modal -->
-  <div id="audioTestModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 shadow-2xl">
-      <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-        <h3 class="font-extrabold text-white text-base flex items-center gap-2">
-          <span>🎵 تجربة أصوات النظام (Web Audio API)</span>
-        </h3>
-        <button id="closeAudioModalBtn" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
-      </div>
-
-      <p class="text-xs text-slate-400 mb-5 leading-relaxed">
-        يولد النظام 4 نغمات صوتية فورية وبترددات محددة بدقة وبدون أي ملفات خارجية أو تأخير:
-      </p>
-
-      <div class="space-y-3">
-        <button id="testSoundOrder" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
-          <div class="flex items-center gap-2">
-            <span>📦</span>
-            <span>1. صوت فتح بوليصة/أوردر جديد (Order Loaded)</span>
-          </div>
-          <span class="text-slate-400 font-mono">500Hz-800Hz</span>
-        </button>
-
-        <button id="testSoundSuccess" class="w-full bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700 text-emerald-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
-          <div class="flex items-center gap-2">
-            <span>✅</span>
-            <span>2. صوت منتج صحيح (Product Success Ding)</span>
-          </div>
-          <span class="text-emerald-400 font-mono">B5 -> E6</span>
-        </button>
-
-        <button id="testSoundComplete" class="w-full bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-700 text-cyan-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
-          <div class="flex items-center gap-2">
-            <span>🎉</span>
-            <span>3. نغمة انتصار واكتمال الأوردر (Order Fanfare)</span>
-          </div>
-          <span class="text-cyan-400 font-mono">C5-E5-G5-C6</span>
-        </button>
-
-        <button id="testSoundError" class="w-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-700 text-rose-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
-          <div class="flex items-center gap-2">
-            <span>⚠️</span>
-            <span>4. صوت خطأ تحذيري (Error Buzzer)</span>
-          </div>
-          <span class="text-rose-400 font-mono">160Hz-130Hz</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
   <!-- Scripts -->
-  <script src="audio.js"></script>
+  <script src="audio-voice.js"></script>
   <script src="catalog.js"></script>
   <script src="app.js"></script>
 </body>
