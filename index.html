@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Khiam Store | نظام فحص وتجهيز الأوردرات بالباركود</title>
+  
+  <!-- Google Fonts: Cairo -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- PapaParse for CSV Parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- PDF.js for Bosta Shipping Label Notes Extraction -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <script>
+    // Configure PDF.js worker
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            cairo: ['Cairo', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#fdf4f4',
+              100: '#fbe8e8',
+              500: '#b91c1c',
+              600: '#991b1b',
+              700: '#7f1d1d',
+              900: '#450a0a',
+            },
+            warehouse: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+            }
+          },
+          animation: {
+            'pulse-fast': 'pulse 0.6s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'bounce-short': 'bounce 0.5s ease-in-out 2',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Cairo', sans-serif;
+      user-select: none;
+    }
+    
+    /* Screen Flash Effects */
+    .flash-red-active {
+      animation: flashRedAnim 0.4s ease-out;
+    }
+    @keyframes flashRedAnim {
+      0% { background-color: rgba(239, 68, 68, 0.7); }
+      100% { background-color: transparent; }
+    }
+
+    .flash-green-active {
+      animation: flashGreenAnim 0.4s ease-out;
+    }
+    @keyframes flashGreenAnim {
+      0% { background-color: rgba(34, 197, 94, 0.4); }
+      100% { background-color: transparent; }
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    .img-zoom-hover:hover {
+      transform: scale(1.04);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-full flex flex-col antialiased selection:bg-rose-500 selection:text-white">
+
+  <!-- Fullscreen Error / Success Flash Overlay -->
+  <div id="flashOverlay" class="fixed inset-0 pointer-events-none z-50 transition-colors duration-200"></div>
+
+  <!-- Top Navigation / Warehouse Status Bar -->
+  <header class="bg-slate-950/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-4 lg:px-8 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & Title -->
+      <div class="flex items-center space-x-3 space-x-reverse">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-900/40">
+          <span class="text-xl font-black text-white">خـ</span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg lg:text-xl font-extrabold text-white tracking-wide">خيام ستور | Khiam Store</h1>
+            <span class="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold px-2 py-0.5 rounded-full">نظام الفحص بالباركود</span>
+          </div>
+          <p class="text-xs text-slate-400">Warehouse Order & Barcode Verification Engine</p>
+        </div>
+      </div>
+
+      <!-- Live Indicators & Stats -->
+      <div class="flex items-center flex-wrap gap-2 lg:gap-3">
+        
+        <!-- Hardware Scanner Status -->
+        <div id="scannerStatusBadge" class="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-semibold shadow-inner">
+          <span class="relative flex h-2.5 w-2.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span id="scannerStatusText">قارئ الباركود جاهز</span>
+        </div>
+
+        <!-- Product Lookup Mode Toggle Button -->
+        <button id="toggleLookupModeBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition" title="مسح صنف لمعرفة مكانه في الأوردرات وتفاصيله">
+          <span>🔍</span>
+          <span id="lookupModeBtnText">استعلام عن منتج</span>
+        </button>
+
+        <!-- Shopify Catalog Status Button -->
+        <button id="openCatalogModalBtn" class="flex items-center gap-1.5 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-700/80 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-300 transition" title="إدارة كتالوج وصور شوبيفاي">
+          <span>🛍️ الكتالوج:</span>
+          <span id="headerCatalogCount" class="font-mono font-bold text-white">0</span>
+        </button>
+
+        <!-- Sound Toggle & Test -->
+        <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+          <button id="toggleSoundBtn" title="كتم / تشغيل الصوت" class="p-1.5 rounded hover:bg-slate-700 text-slate-200 transition">
+            <svg id="soundIconOn" class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+            </svg>
+            <svg id="soundIconOff" class="w-5 h-5 text-rose-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
+            </svg>
+          </button>
+
+          <button id="testAudioBtn" title="تجربة أصوات النظام" class="px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-700 rounded transition">
+            🎵 تجربة
+          </button>
+        </div>
+
+        <!-- History Button -->
+        <button id="openHistoryBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-200 transition">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <span>سجل اليوم</span>
+        </button>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast Banner -->
+  <div id="toastContainer" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 pointer-events-none transition-all duration-300 opacity-0 translate-y-[-20px]">
+    <div id="toastContent" class="pointer-events-auto rounded-xl p-4 shadow-2xl flex items-center gap-3 border text-sm font-bold">
+      <!-- Dynamic Toast Content -->
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 flex flex-col gap-4">
+
+    <!-- Compact Stats Bar & Quick Search Header -->
+    <section class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
+      
+      <!-- Stats Counters -->
+      <div class="flex items-center flex-wrap gap-2 lg:gap-3 text-xs">
+        <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 px-3 py-1.5 rounded-xl font-bold">
+          <span class="text-slate-400">📊 إجمالي الشيت:</span>
+          <span id="compactTotalOrders" class="text-amber-400 font-mono text-sm font-black">0</span>
+          <span class="text-slate-400">أوردر</span>
+        </div>
+
+        <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 px-3 py-1.5 rounded-xl font-bold">
+          <span class="text-slate-400">✅ المكتمل اليوم:</span>
+          <span id="compactCompletedOrders" class="text-emerald-400 font-mono text-sm font-black">0</span>
+          <span class="text-slate-500">/</span>
+          <span id="compactTotalOrdersDenom" class="text-slate-300 font-mono text-sm font-black">0</span>
+        </div>
+
+        <!-- Remaining Orders Trigger Button -->
+        <button id="openRemainingBtn" class="flex items-center gap-1.5 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-700/60 text-amber-300 px-3 py-1.5 rounded-xl font-bold transition">
+          <span>⏳ المتبقي:</span>
+          <span id="compactRemainingOrders" class="font-mono text-sm font-black">0</span>
+          <span class="text-[11px] underline">عرض القائمة</span>
+        </button>
+
+        <!-- PDF Notes Counter Badge -->
+        <div id="pdfNotesCountBadge" class="hidden flex items-center gap-1.5 bg-rose-950/60 border border-rose-600/70 text-rose-300 px-3 py-1.5 rounded-xl text-xs font-bold">
+          <span>📄 تم ربط ملاحظات بوالص:</span>
+          <span id="pdfNotesCountNum" class="font-mono font-black text-white">0</span>
+        </div>
+      </div>
+
+      <!-- Quick Search Form -->
+      <div class="flex-1 min-w-[260px] max-w-md">
+        <div class="relative">
+          <input 
+            type="text" 
+            id="quickSearchInput" 
+            placeholder="بحث سريع: رقم الأوردر، اسم العميل، أو البوليصة..." 
+            class="w-full bg-slate-900 border border-slate-700 focus:border-rose-500 rounded-xl pr-9 pl-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition font-sans"
+          >
+          <span class="absolute right-3 top-2 text-slate-500 text-xs">🔍</span>
+          <div id="quickSearchResults" class="absolute top-full right-0 left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto hidden z-30 divide-y divide-slate-800 text-xs">
+            <!-- Dynamic search results -->
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Top Action Bar: CSV Upload + PDF Bosta Reader + Manual Barcode Scanner -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      
+      <!-- Files Upload & Sync Box -->
+      <div class="lg:col-span-7 bg-slate-800/70 border border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <span class="font-bold text-sm text-slate-200">تحميل ملفات الشحنات (CSV و PDF)</span>
+          </div>
+          <span id="csvFileName" class="text-xs text-slate-400 truncate max-w-[200px]">لم يتم اختيار ملف</span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          
+          <!-- CSV Upload -->
+          <label class="cursor-pointer bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+            <span>شيت Operix CSV</span>
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+          </label>
+
+          <!-- Bosta PDF Notes Upload -->
+          <label class="cursor-pointer bg-gradient-to-r from-amber-700 to-orange-600 hover:from-amber-600 hover:to-orange-500 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5" title="قراءة بوالص بوسطة PDF واستخراج الملاحظات والتعديلات تلقائياً">
+            <span>📄</span>
+            <span>بوالص PDF (الملاحظات)</span>
+            <input type="file" id="pdfFileInput" accept=".pdf" class="hidden">
+          </label>
+
+          <!-- Sample CSV Button -->
+          <button id="loadSampleCsvBtn" class="bg-slate-700/80 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-xs px-3 py-2.5 rounded-xl border border-slate-600 transition flex items-center gap-1">
+            <span>✨ ديمو</span>
+          </button>
+
+          <!-- Shopify Sync Quick Button -->
+          <button id="syncShopifyQuickBtn" class="bg-purple-900/60 hover:bg-purple-800/70 text-purple-200 hover:text-white font-medium text-xs px-3 py-2.5 rounded-xl border border-purple-700 transition flex items-center gap-1" title="مزامنة الكتالوج من شوبيفاي">
+            <span>🔄 صور شوبيفاي</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Manual Barcode Input Fallback -->
+      <div class="lg:col-span-5 bg-slate-800/70 border border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-bold text-sm text-slate-200 flex items-center gap-2">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+            </svg>
+            إدخال يدوي احتياطي (بوليصة أو باركود صنف)
+          </span>
+          <span class="text-[11px] text-slate-400">القارئ يعمل تلقائياً</span>
+        </div>
+
+        <form id="manualScanForm" class="flex gap-2">
+          <input 
+            type="text" 
+            id="manualBarcodeInput" 
+            placeholder="امسح أو اكتب الباركود / رقم البوليصة..." 
+            class="flex-1 bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 outline-none transition font-mono"
+            autocomplete="off"
+          >
+          <button 
+            type="submit" 
+            class="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition flex items-center justify-center gap-1 shadow"
+          >
+            مسح
+          </button>
+        </form>
+      </div>
+
+    </section>
+
+    <!-- Last Scan HUD / Live Feedback Line -->
+    <section id="lastScanHud" class="bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-3">
+        <span class="text-slate-400 font-semibold">آخر قراءة:</span>
+        <span id="lastScannedCodeDisplay" class="font-mono font-bold text-slate-200 tracking-wider">-- لا يوجد --</span>
+        <span id="lastScanTypeBadge" class="hidden font-bold px-2 py-0.5 rounded text-[11px]"></span>
+      </div>
+      <div id="lastScanMessage" class="text-slate-400 truncate max-w-md text-left font-medium">
+        امسح بوليصة شحن بوسطة أو كود منتج
+      </div>
+    </section>
+
+    <!-- Empty State: No Active Order -->
+    <section id="noOrderState" class="flex-1 flex flex-col items-center justify-center p-8 lg:p-14 border-2 border-dashed border-slate-800 rounded-3xl bg-slate-950/30 text-center">
+      <div class="w-24 h-24 mb-6 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/70 flex items-center justify-center shadow-xl shadow-black/40">
+        <svg class="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+        </svg>
+      </div>
+      <h2 class="text-2xl font-black text-white mb-2">في انتظار مسح بوليصة الشحن (Bosta)</h2>
+      <p class="text-slate-400 text-sm max-w-md leading-relaxed mb-6">
+        قم بمسح الباركود الموجود على بوليصة الشحن لفتح الأوردر وبدء مطابقة وفحص المنتجات المطلوبة مع صورها ومقاساتها وألوانها.
+      </p>
+      <div class="flex items-center gap-2 text-xs bg-slate-800/80 text-slate-300 border border-slate-700 px-4 py-2 rounded-xl">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span>قارئ الباركود يستقبل المدخلات تلقائياً من أي مكان في الشاشة</span>
+      </div>
+    </section>
+
+    <!-- Active Order Container (Hidden when no active order) -->
+    <section id="activeOrderContainer" class="hidden flex flex-col gap-5">
+      
+      <!-- Order Header Card -->
+      <div class="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-5 lg:p-6 shadow-xl relative overflow-hidden">
+        
+        <!-- Background accent subtle gradient -->
+        <div class="absolute -top-24 -left-24 w-72 h-72 bg-rose-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Bosta PDF Special Notes Alert Box (Extracted from PDF Labels) -->
+        <div id="bostaPdfNotesAlert" class="hidden mb-4 bg-gradient-to-r from-rose-900/90 to-amber-900/90 border-2 border-rose-500 text-white p-4 rounded-2xl shadow-xl flex items-start gap-3 animate-pulse">
+          <div class="w-9 h-9 rounded-xl bg-rose-500 flex items-center justify-center text-xl flex-shrink-0 mt-0.5">
+            ⚠️
+          </div>
+          <div class="flex-1">
+            <div class="font-extrabold text-sm text-rose-200 mb-0.5">تنبيه وملاحظات خاصة على بوليصة الشحن (PDF Notes):</div>
+            <div id="bostaPdfNotesText" class="text-base font-black text-white font-sans leading-relaxed">
+              --
+            </div>
+          </div>
+        </div>
+
+        <!-- Exchange Warning Badge (Shown if Order ID starts with EXC-) -->
+        <div id="exchangeBadge" class="hidden mb-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-base lg:text-lg px-5 py-3 rounded-2xl shadow-lg shadow-orange-950/40 flex items-center justify-between animate-pulse">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">⚠️</span>
+            <span>تنبيه هام: أوردر تبديل شحنة (EXCHANGE ORDER)</span>
+          </div>
+          <span class="text-xs bg-white/20 px-3 py-1 rounded-full uppercase tracking-wider">يرجى التأكد من استلام المرتجع</span>
+        </div>
+
+        <!-- Order Complete Banner (Shown when 100% finished) -->
+        <div id="orderCompleteBanner" class="hidden mb-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-base lg:text-xl px-5 py-4 rounded-2xl shadow-xl shadow-emerald-950/50 flex flex-wrap items-center justify-between gap-3 animate-bounce-short">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-2xl">✅</div>
+            <div>
+              <div>تم اجتياز وفحص الأوردر بالكامل بنجاح 100%</div>
+              <p class="text-xs text-emerald-100 font-normal">تم تجهيز كافة القطع المطلوبة وحفظ الأوردر في السجل</p>
+            </div>
+          </div>
+          <button id="nextOrderBtn" class="bg-white text-emerald-800 hover:bg-emerald-50 font-black text-sm px-5 py-2.5 rounded-xl shadow transition">
+            مسح الأوردر التالي ⏭️
+          </button>
+        </div>
+
+        <!-- Main Details Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+          
+          <!-- Order ID & Tracking -->
+          <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl">
+            <span class="text-xs text-slate-400 block mb-1">رقم الأوردر وبوليصة الشحن</span>
+            <div class="flex items-center gap-2">
+              <span id="orderIdDisplay" class="text-xl font-black text-white font-mono tracking-tight">#----</span>
+            </div>
+            <div class="text-xs text-slate-300 mt-1 flex items-center gap-1 font-mono">
+              <span class="text-slate-400">بوليصة:</span>
+              <span id="orderTrackingDisplay" class="font-bold text-amber-400">----</span>
+            </div>
+          </div>
+
+          <!-- Customer Name & Phone -->
+          <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl">
+            <span class="text-xs text-slate-400 block mb-1">بيانات العميل</span>
+            <div id="customerNameDisplay" class="text-base font-bold text-white truncate">----</div>
+            <div id="customerPhoneDisplay" class="text-xs text-slate-300 mt-1 font-mono flex items-center gap-2">
+              <span>📞 ----</span>
+            </div>
+          </div>
+
+          <!-- Shipping Company & Reference -->
+          <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl">
+            <span class="text-xs text-slate-400 block mb-1">شركة الشحن والمرجع</span>
+            <div id="shippingCompanyDisplay" class="text-base font-bold text-cyan-400 truncate">Bosta</div>
+            <div id="pickingRefDisplay" class="text-xs text-slate-300 mt-1 truncate">
+              <span class="text-slate-400">المرجع:</span> <span class="font-mono">----</span>
+            </div>
+          </div>
+
+          <!-- Items Counter Summary -->
+          <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl flex flex-col justify-between">
+            <span class="text-xs text-slate-400 block mb-1">حالة التجهيز الإجمالية</span>
+            <div class="flex items-baseline justify-between">
+              <div class="text-2xl font-black font-mono">
+                <span id="scannedTotalDisplay" class="text-emerald-400">0</span>
+                <span class="text-slate-500">/</span>
+                <span id="requiredTotalDisplay" class="text-white">0</span>
+              </div>
+              <span id="percentBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">0%</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Overall Progress Bar -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs text-slate-400 font-semibold">
+            <span>نسبة استيفاء المنتجات</span>
+            <span id="progressText">0 من 0 قطع</span>
+          </div>
+          <div class="w-full h-3.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
+            <div id="orderProgressBar" class="h-full bg-gradient-to-r from-amber-500 via-rose-500 to-emerald-500 rounded-full transition-all duration-300 w-0"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Products Grid Section -->
+      <div>
+        <div class="flex items-center justify-between mb-3 px-1">
+          <h3 class="text-lg font-extrabold text-white flex items-center gap-2">
+            <span>قائمة المنتجات المطلوبة في هذا الأوردر</span>
+            <span id="productTypesCount" class="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-md font-mono">0 أصناف</span>
+          </h3>
+          <span class="text-xs text-slate-400">اضغط على صورة أي منتج لتكبيرها وفحص التفاصيل</span>
+        </div>
+
+        <!-- Dynamic Product Cards Grid -->
+        <div id="productCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Injected dynamically by app.js -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Remaining / Unscanned Orders Modal -->
+  <div id="remainingOrdersModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl max-h-[88vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      <div class="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">⏳</span>
+          <div>
+            <h3 class="font-extrabold text-white text-base">قائمة الأوردرات المتبقية (لم يتم فحصها بعد)</h3>
+            <p class="text-xs text-slate-400">اضغط على أي أوردر لفتحه مباشرة على شاشة الفحص</p>
+          </div>
+        </div>
+        <button id="closeRemainingModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl text-lg font-bold">✕</button>
+      </div>
+      <div class="p-3 bg-slate-900 border-b border-slate-800">
+        <input 
+          type="text" 
+          id="remainingFilterInput" 
+          placeholder="تصفية الأوردرات المتبقية بالاسم أو الرقم..." 
+          class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
+        >
+      </div>
+      <div class="flex-1 overflow-y-auto p-4">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400">
+              <th class="py-2.5 px-3">#</th>
+              <th class="py-2.5 px-3">رقم الأوردر</th>
+              <th class="py-2.5 px-3">رقم التتبع (Bosta)</th>
+              <th class="py-2.5 px-3">اسم العميل</th>
+              <th class="py-2.5 px-3">عدد القطع</th>
+              <th class="py-2.5 px-3 text-center">إجراء</th>
+            </tr>
+          </thead>
+          <tbody id="remainingTableBody" class="divide-y divide-slate-800/60 text-slate-200">
+            <!-- Dynamic remaining orders rows -->
+          </tbody>
+        </table>
+        <div id="emptyRemainingState" class="text-center py-12 text-emerald-400 text-sm font-bold hidden">
+          🎉 مبروك! تم فحص وتجهيز جميع أوردرات الشيت بالكامل 100%!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Lookup Modal (وضع استعلام عن منتج) -->
+  <div id="productLookupModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-cyan-500/50 w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      <div class="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🔍</span>
+          <h3 class="font-extrabold text-white text-base">استعلام فوري عن منتج ومطابقته بالأوردرات</h3>
+        </div>
+        <button id="closeLookupModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl text-lg font-bold">✕</button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-4">
+        
+        <!-- Scanned Product Card -->
+        <div class="flex items-start gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+          <img id="lookupProductImg" src="" alt="" class="w-28 h-28 object-contain rounded-xl bg-slate-900 border border-slate-700">
+          <div class="flex-1 space-y-1.5">
+            <h4 id="lookupProductTitle" class="text-base font-black text-white">--</h4>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="bg-slate-800 font-mono text-amber-300 px-2 py-0.5 rounded font-bold" id="lookupProductSku">SKU: --</span>
+              <span id="lookupMatchLevel" class="text-slate-400 text-[11px]"></span>
+            </div>
+            <div id="lookupBadges" class="flex items-center gap-2 pt-1">
+              <!-- Color / Size badges -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Orders that contain this item in today's sheet -->
+        <div>
+          <h5 class="text-xs font-bold text-slate-300 mb-2">الأوردرات التي تحتاج هذا الصنف في شيت اليوم:</h5>
+          <div id="lookupOrdersList" class="space-y-2 max-h-56 overflow-y-auto">
+            <!-- Dynamic list of orders needing this SKU -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Shopify Catalog Sync & Management Modal -->
+  <div id="catalogModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center text-xl">
+            🛍️
+          </div>
+          <div>
+            <h3 class="font-extrabold text-white text-base">مزامنة كتالوج صور شوبيفاي</h3>
+            <p class="text-xs text-slate-400">سحب المنتجات والـ Variants والصور من https://khiam.store</p>
+          </div>
+        </div>
+        <button id="closeCatalogModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition text-lg font-bold">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-5">
+        
+        <!-- Live Status Counter Box -->
+        <div class="bg-slate-950/80 border border-purple-900/40 rounded-2xl p-4 flex items-center justify-around text-center">
+          <div>
+            <span class="text-xs text-slate-400 block mb-0.5">المنتجات المخزنة</span>
+            <span id="modalProductsCount" class="text-2xl font-black text-purple-400 font-mono">0</span>
+          </div>
+          <div class="w-px h-10 bg-slate-800"></div>
+          <div>
+            <span class="text-xs text-slate-400 block mb-0.5">أكواد SKU المسجلة</span>
+            <span id="modalVariantsCount" class="text-2xl font-black text-white font-mono">0</span>
+          </div>
+          <div class="w-px h-10 bg-slate-800"></div>
+          <div>
+            <span class="text-xs text-slate-400 block mb-0.5">آخر مزامنة</span>
+            <span id="modalLastSyncText" class="text-xs font-semibold text-slate-400 font-mono">لم تتم</span>
+          </div>
+        </div>
+
+        <!-- Store Domain Input -->
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1.5">رابط متجر شوبيفاي (Shopify Domain):</label>
+          <input 
+            type="text" 
+            id="shopifyDomainInput" 
+            value="khiam.store" 
+            class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono outline-none"
+          >
+          <span class="text-[11px] text-slate-400 mt-1 block">يتم استدعاء: <code class="text-purple-300">/products.json?limit=250</code> مع تخطي CORS تلقائياً.</span>
+        </div>
+
+        <!-- Live Sync Progress Line -->
+        <div id="syncProgressContainer" class="hidden space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex justify-between text-xs text-purple-300 font-bold">
+            <span id="syncProgressStatus">جاري بدء المزامنة...</span>
+            <span id="syncProgressPage"></span>
+          </div>
+          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div id="syncProgressBar" class="h-full bg-gradient-to-r from-purple-500 to-rose-500 w-0 transition-all duration-200"></div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="space-y-2.5 pt-2">
+          <button 
+            id="startSyncCatalogBtn" 
+            class="w-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-purple-950/50 flex items-center justify-center gap-2 text-sm transition"
+          >
+            <span>🔄</span>
+            <span>بدء سحب الكتالوج الآن من شوبيفاي</span>
+          </button>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <button 
+              id="exportCatalogJsonBtn" 
+              class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5"
+            >
+              <span>💾</span>
+              <span>تصدير ملف الكتالوج (JSON)</span>
+            </button>
+
+            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5">
+              <span>📥</span>
+              <span>استيراد ملف كتالوج (JSON)</span>
+              <input type="file" id="importCatalogJsonInput" accept=".json" class="hidden">
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Image Lightbox / Zoom Modal -->
+  <div id="imageLightboxModal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="max-w-2xl w-full bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col">
+      <div class="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <h4 id="lightboxTitle" class="text-sm font-bold text-white truncate max-w-md">معاينة المنتج</h4>
+        <button id="closeLightboxBtn" class="text-slate-400 hover:text-white p-1 rounded-lg text-lg font-bold">✕</button>
+      </div>
+      <div class="p-4 bg-slate-950 flex items-center justify-center max-h-[70vh] overflow-hidden">
+        <img id="lightboxImg" src="" alt="Zoomed Product" class="max-w-full max-h-[65vh] object-contain rounded-xl shadow-lg">
+      </div>
+      <div class="p-4 bg-slate-900 flex items-center justify-between border-t border-slate-800 text-xs">
+        <span id="lightboxSku" class="font-mono text-rose-300 font-bold">SKU: --</span>
+        <span id="lightboxMatchBadge" class="bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-semibold"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Modal / Drawer -->
+  <div id="historyModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center font-bold">
+            📜
+          </div>
+          <div>
+            <h3 class="font-extrabold text-white text-base">سجل الأوردرات المجهزة اليوم</h3>
+            <p class="text-xs text-slate-400">قائمة الشحنات التي تم فحصها واجتيازها بالكامل</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="exportHistoryCsvBtn" class="bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold px-3 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+            📥 تصدير CSV
+          </button>
+          <button id="clearHistoryBtn" class="bg-rose-950/60 hover:bg-rose-900 text-xs text-rose-300 font-semibold px-3 py-2 rounded-xl border border-rose-800 transition">
+            مسح السجل
+          </button>
+          <button id="closeHistoryBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition text-lg font-bold">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- History Table Container -->
+      <div class="flex-1 overflow-y-auto p-4">
+        <table class="w-full text-right text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400">
+              <th class="py-2.5 px-3">#</th>
+              <th class="py-2.5 px-3">رقم الأوردر</th>
+              <th class="py-2.5 px-3">رقم التتبع (Bosta)</th>
+              <th class="py-2.5 px-3">اسم العميل</th>
+              <th class="py-2.5 px-3">عدد القطع</th>
+              <th class="py-2.5 px-3">وقت الإتمام</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody" class="divide-y divide-slate-800/60 text-slate-200">
+            <!-- Dynamic rows -->
+          </tbody>
+        </table>
+        <div id="emptyHistoryState" class="text-center py-12 text-slate-500 text-sm hidden">
+          لم يتم تجهيز أي أوردر حتى الآن اليوم.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Audio Test Modal -->
+  <div id="audioTestModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+        <h3 class="font-extrabold text-white text-base flex items-center gap-2">
+          <span>🎵 تجربة أصوات النظام (Web Audio API)</span>
+        </h3>
+        <button id="closeAudioModalBtn" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+        يولد النظام 4 نغمات صوتية فورية وبترددات محددة بدقة وبدون أي ملفات خارجية أو تأخير:
+      </p>
+
+      <div class="space-y-3">
+        <button id="testSoundOrder" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
+          <div class="flex items-center gap-2">
+            <span>📦</span>
+            <span>1. صوت فتح بوليصة/أوردر جديد (Order Loaded)</span>
+          </div>
+          <span class="text-slate-400 font-mono">500Hz-800Hz</span>
+        </button>
+
+        <button id="testSoundSuccess" class="w-full bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700 text-emerald-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
+          <div class="flex items-center gap-2">
+            <span>✅</span>
+            <span>2. صوت منتج صحيح (Product Success Ding)</span>
+          </div>
+          <span class="text-emerald-400 font-mono">B5 -> E6</span>
+        </button>
+
+        <button id="testSoundComplete" class="w-full bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-700 text-cyan-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
+          <div class="flex items-center gap-2">
+            <span>🎉</span>
+            <span>3. نغمة انتصار واكتمال الأوردر (Order Fanfare)</span>
+          </div>
+          <span class="text-cyan-400 font-mono">C5-E5-G5-C6</span>
+        </button>
+
+        <button id="testSoundError" class="w-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-700 text-rose-300 font-bold p-3 rounded-2xl flex items-center justify-between text-xs transition">
+          <div class="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>4. صوت خطأ تحذيري (Error Buzzer)</span>
+          </div>
+          <span class="text-rose-400 font-mono">160Hz-130Hz</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="audio.js"></script>
+  <script src="catalog.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

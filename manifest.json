@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "خيام ستور | فحص الأوردرات بالباركود",
+  "version": "2.1.0",
+  "description": "نظام فحص وتجهيز أوردرات خيام ستور بالباركود، الربط المباشر مع أوبريكس، قراءة بوالص PDF، ومزامنة كتالوج شوبيفاي",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://khiam.store/*",
+    "https://*.operix.co/*",
+    "https://*.bosta.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "فتح شاشة فحص الأوردرات بالباركود (تبويب كامل)"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://khiiam.operix.co/*",
+        "https://*.operix.co/*",
+        "https://*.bosta.co/*"
+      ],
+      "js": [
+        "content-operix.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
