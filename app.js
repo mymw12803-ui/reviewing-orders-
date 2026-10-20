@@ -1,14 +1,14 @@
 /**
  * Khiam Store - Production Warehouse Barcode Engine & Packing System
  * Features:
- * - Global Barcode Scanner with Auto Arabic Keyboard Corrector (600ms debounce guard)
- * - Bosta Shipping Waybill Normalizer & Exchange Order (EXC-) Detector
- * - Web Audio synth tones (playChirp, playDing, playComplete, playBuzzer, playSizeMismatch)
- * - Arabic SpeechSynthesis Voice Prompts (lang: 'ar-EG')
+ * - Direct Fail-Safe Barcode Matching: Bosta tracking -> Operix CSV -> SKU polybag matching
+ * - Global Hardware Barcode Listener with Auto Arabic Keyboard Corrector & 600ms Debounce Guard
+ * - High-Volume Warehouse Audio Boost (2.5x gain + DynamicsCompressorNode)
+ * - Natural Arabic Voice Guidance (Microsoft Salma/Shakir Natural -> Google -> ar-EG/ar-SA)
  * - Size Mismatch Detection & Alerting
  * - "Lost Item" Finder Mode (وضع استعلام عن الصنف التائه)
- * - End-of-Day Bosta Courier Handover Manifest Printing
- * - PDF.js Bosta Special Notes Extractor
+ * - Bosta Courier Handover Manifest Printing
+ * - Background Auto-Sync Event Listener
  */
 
 class KhiamWarehouseApp {
@@ -46,29 +46,28 @@ class KhiamWarehouseApp {
       'loadedOrdersCount', 'completedOrdersTodayCount', 'toggleSoundBtn',
       'soundIconOn', 'soundIconOff', 'toggleVoiceBtn', 'voiceStatusIcon', 'voiceStatusText',
       'printManifestBtn', 'openHistoryBtn', 'toastContainer', 'toastContent',
-      'csvFileInput', 'csvFileName', 'loadSampleCsvBtn', 'syncShopifyQuickBtn',
-      'manualScanForm', 'manualBarcodeInput', 'lastScanHud', 'lastScannedCodeDisplay',
-      'lastScanTypeBadge', 'lastScanMessage', 'noOrderState', 'activeOrderContainer',
-      'exchangeBadge', 'orderCompleteBanner', 'nextOrderBtn', 'orderIdDisplay',
-      'orderTrackingDisplay', 'customerNameDisplay', 'customerPhoneDisplay',
-      'shippingCompanyDisplay', 'pickingRefDisplay', 'scannedTotalDisplay',
-      'requiredTotalDisplay', 'percentBadge', 'progressText', 'orderProgressBar',
-      'productTypesCount', 'productCardsGrid', 'historyModal', 'closeHistoryBtn',
-      'clearHistoryBtn', 'exportHistoryCsvBtn', 'historyTableBody', 'emptyHistoryState',
-      'openCatalogModalBtn', 'closeCatalogModalBtn', 'catalogModal', 'modalProductsCount',
-      'modalVariantsCount', 'modalLastSyncText', 'shopifyDomainInput', 'startSyncCatalogBtn',
-      'exportCatalogJsonBtn', 'importCatalogJsonInput', 'syncProgressContainer',
-      'syncProgressStatus', 'syncProgressPage', 'syncProgressBar', 'headerCatalogCount',
-      'imageLightboxModal', 'closeLightboxBtn', 'lightboxImg', 'lightboxTitle',
-      'lightboxSku', 'lightboxMatchBadge', 'pdfFileInput', 'bostaPdfNotesAlert',
-      'bostaPdfNotesText', 'pdfNotesCountBadge', 'pdfNotesCountNum', 'compactTotalOrders',
-      'compactCompletedOrders', 'compactTotalOrdersDenom', 'compactRemainingOrders',
-      'openRemainingBtn', 'quickSearchInput', 'quickSearchResults', 'remainingOrdersModal',
-      'closeRemainingModalBtn', 'remainingFilterInput', 'remainingTableBody',
-      'emptyRemainingState', 'toggleLookupModeBtn', 'lookupModeBtnText',
-      'productLookupModal', 'closeLookupModalBtn', 'lookupProductImg',
-      'lookupProductTitle', 'lookupProductSku', 'lookupMatchLevel', 'lookupBadges',
-      'lookupOrdersList',
+      'csvFileInput', 'csvFileName', 'manualScanForm', 'manualBarcodeInput',
+      'lastScanHud', 'lastScannedCodeDisplay', 'lastScanTypeBadge', 'lastScanMessage',
+      'noOrderState', 'activeOrderContainer', 'exchangeBadge', 'orderCompleteBanner',
+      'nextOrderBtn', 'orderIdDisplay', 'orderTrackingDisplay', 'customerNameDisplay',
+      'customerPhoneDisplay', 'shippingCompanyDisplay', 'pickingRefDisplay',
+      'scannedTotalDisplay', 'requiredTotalDisplay', 'percentBadge', 'progressText',
+      'orderProgressBar', 'productTypesCount', 'productCardsGrid', 'historyModal',
+      'closeHistoryBtn', 'clearHistoryBtn', 'exportHistoryCsvBtn', 'historyTableBody',
+      'emptyHistoryState', 'openCatalogModalBtn', 'closeCatalogModalBtn', 'catalogModal',
+      'modalProductsCount', 'modalVariantsCount', 'modalLastSyncText', 'shopifyDomainInput',
+      'startSyncCatalogBtn', 'exportCatalogJsonBtn', 'importCatalogJsonInput',
+      'syncProgressContainer', 'syncProgressStatus', 'syncProgressPage', 'syncProgressBar',
+      'headerCatalogCount', 'autoSyncStatusText', 'imageLightboxModal', 'closeLightboxBtn',
+      'lightboxImg', 'lightboxTitle', 'lightboxSku', 'lightboxMatchBadge', 'pdfFileInput',
+      'bostaPdfNotesAlert', 'bostaPdfNotesText', 'pdfNotesCountBadge', 'pdfNotesCountNum',
+      'compactTotalOrders', 'compactCompletedOrders', 'compactTotalOrdersDenom',
+      'compactRemainingOrders', 'openRemainingBtn', 'quickSearchInput', 'quickSearchResults',
+      'remainingOrdersModal', 'closeRemainingModalBtn', 'remainingFilterInput',
+      'remainingTableBody', 'emptyRemainingState', 'toggleLookupModeBtn',
+      'lookupModeBtnText', 'productLookupModal', 'closeLookupModalBtn',
+      'lookupProductImg', 'lookupProductTitle', 'lookupProductSku', 'lookupMatchLevel',
+      'lookupBadges', 'lookupOrdersList',
       // Print elements
       'printManifestContainer', 'printDate', 'printBatchRef', 'printTotalShipments',
       'printCompletedShipments', 'printTotalPieces', 'printManifestTableBody'
@@ -97,7 +96,7 @@ class KhiamWarehouseApp {
       // Row 4
       'ئ': 'z', 'ء': 'x', 'ؤ': 'c', 'ر': 'v', 'لا': 'b', 'لآ': 'b', 'لأ': 'b', 'لإ': 'b',
       'ى': 'n', 'ة': 'm', 'و': ',', 'ز': '.', 'ظ': '/',
-      // Uppercase shift mappings
+      // Uppercase shift
       'أ': 'h', 'إ': 'h', 'آ': 'h'
     };
 
@@ -182,9 +181,6 @@ class KhiamWarehouseApp {
       if (file) this.parseBostaPdf(file);
     });
 
-    // Demo Data
-    this.dom.loadSampleCsvBtn.addEventListener('click', () => this.loadSampleData());
-
     // Sound toggle
     this.dom.toggleSoundBtn.addEventListener('click', () => {
       const muted = window.soundEngine.toggleSound();
@@ -243,7 +239,6 @@ class KhiamWarehouseApp {
       this.dom.catalogModal.classList.remove('hidden');
     };
     this.dom.openCatalogModalBtn.addEventListener('click', openCat);
-    this.dom.syncShopifyQuickBtn.addEventListener('click', openCat);
     this.dom.closeCatalogModalBtn.addEventListener('click', () => this.dom.catalogModal.classList.add('hidden'));
     this.dom.startSyncCatalogBtn.addEventListener('click', () => this.runShopifyCatalogSync());
     this.dom.exportCatalogJsonBtn.addEventListener('click', () => {
@@ -305,6 +300,18 @@ class KhiamWarehouseApp {
       }
     });
     this.dom.closeLookupModalBtn.addEventListener('click', () => this.dom.productLookupModal.classList.add('hidden'));
+
+    // Listen to background auto-sync events from catalog.js
+    window.addEventListener('catalog-loaded', () => {
+      this.updateCatalogCounters();
+    });
+    window.addEventListener('catalog-updated', () => {
+      this.updateCatalogCounters();
+      if (this.dom.autoSyncStatusText) {
+        this.dom.autoSyncStatusText.textContent = 'تم التحديث التلقائي من شوبيفاي بنجاح';
+      }
+      if (this.activeOrder) this.renderProductCards();
+    });
   }
 
   // ----------------------------------------------------
@@ -328,7 +335,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 5. Barcode Resolution Engine (Waybill vs SKU)
+  // 5. Fail-Safe Barcode Resolution Engine (Bosta AWB vs SKU)
   // ----------------------------------------------------
   handleScannedCode(cleanCode) {
     const lower = cleanCode.toLowerCase();
@@ -342,7 +349,7 @@ class KhiamWarehouseApp {
       return;
     }
 
-    // Step 1: Check Bosta Waybill
+    // STEP A: Check Bosta Waybill Barcode
     let matchedOrder = null;
     if (this.ordersMap.has(normalizedTracking)) {
       matchedOrder = this.ordersMap.get(normalizedTracking);
@@ -360,7 +367,7 @@ class KhiamWarehouseApp {
       return;
     }
 
-    // Step 2: Ensure order is open
+    // STEP B: Ensure an active order is loaded on screen
     if (!this.activeOrder) {
       this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-rose-900/80 text-rose-300 border border-rose-700';
       this.dom.lastScanTypeBadge.textContent = 'خطأ';
@@ -374,7 +381,7 @@ class KhiamWarehouseApp {
       return;
     }
 
-    // Step 3: Product Verification
+    // STEP C: Product SKU Verification against active order
     this.verifyProductSku(cleanCode);
   }
 
@@ -388,10 +395,10 @@ class KhiamWarehouseApp {
   loadActiveOrder(order) {
     this.activeOrder = order;
 
-    // Play order loaded chirp sound
+    // High-volume chirp
     window.soundEngine.playChirp();
 
-    // Voice announcement: "أوردر جديد: [X] قطع"
+    // Natural Arabic Voice prompt: "أوردر جديد: [X] قطع"
     const countPhrase = this.formatArabicCount(order.totalRequired);
     window.speakArabic(`أوردر جديد: ${countPhrase}`);
 
@@ -403,10 +410,10 @@ class KhiamWarehouseApp {
     const cleanSku = scannedSku.trim().toLowerCase();
     const items = this.activeOrder.items;
 
-    // 1. Exact match
+    // 1. Direct SKU match
     let matchedItem = items.find(i => i.sku === cleanSku);
 
-    // 2. Check for Size Mismatch (Model & Color code match, but size digit differs)
+    // 2. Size Mismatch Detector (Model/Color code matches, but size digit differs)
     if (!matchedItem) {
       const scannedPrefix = window.catalogManager.extractModelPrefix(cleanSku);
       const sizeMismatchItem = items.find(i => {
@@ -415,7 +422,6 @@ class KhiamWarehouseApp {
       });
 
       if (sizeMismatchItem) {
-        // SIZE MISMATCH DETECTED!
         this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-orange-900/90 text-orange-200 border border-orange-500';
         this.dom.lastScanTypeBadge.textContent = 'اختلاف مقاس';
         this.dom.lastScanMessage.textContent = `انتبه: الموديل صح ولكن المقاس مختلف!`;
@@ -489,7 +495,6 @@ class KhiamWarehouseApp {
       this.triggerCardFlash(matchedItem.sku, 'green');
       window.soundEngine.playDing();
 
-      // Voice remaining count
       if (remainingInOrder === 1) {
         window.speakArabic('باقي قطعة واحدة');
       } else {
@@ -588,7 +593,6 @@ class KhiamWarehouseApp {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
 
-    // Populate Print Manifest fields
     this.dom.printDate.textContent = todayStr + ' - ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     
     const firstPickingRef = this.orders.find(o => o.pickingReference && o.pickingReference !== '---')?.pickingReference || 'REF-196';
@@ -622,7 +626,6 @@ class KhiamWarehouseApp {
       tbody.appendChild(tr);
     });
 
-    // Invoke Native Print
     window.print();
   }
 
@@ -822,14 +825,12 @@ class KhiamWarehouseApp {
     this.dom.noOrderState.classList.add('hidden');
     this.dom.activeOrderContainer.classList.remove('hidden');
 
-    // Exchange order badge
     if (order.isExchange) {
       this.dom.exchangeBadge.classList.remove('hidden');
     } else {
       this.dom.exchangeBadge.classList.add('hidden');
     }
 
-    // PDF notes alert
     const pdfNote = this.pdfNotesMap.get(order.normalizedTracking.toLowerCase()) || 
                     this.pdfNotesMap.get((order.trackingNumber || '').toLowerCase());
 
@@ -840,7 +841,6 @@ class KhiamWarehouseApp {
       this.dom.bostaPdfNotesAlert.classList.add('hidden');
     }
 
-    // Completion banner
     if (order.isCompleted) {
       this.dom.orderCompleteBanner.classList.remove('hidden');
     } else {
@@ -1448,30 +1448,6 @@ class KhiamWarehouseApp {
     if (pureDigitsMatch) return pureDigitsMatch[1];
 
     return clean.replace(/\s+/g, '');
-  }
-
-  // ----------------------------------------------------
-  // 17. Sample Demo Data
-  // ----------------------------------------------------
-  loadSampleData() {
-    const sampleCsv = `Order ID,Customer Name,Primary Phone Number,Secondary Phone Number,Products,SKUs,Picking Reference,Shipping Company,Tracking Number
-10488,سارة أحمد مصطفى,01012345678,01123456789,"[2] خمار بأكمام سادة - بتنجاني / الثاني | aa011f6\n[1] خمار بأكمام سادة - كشميري / الثاني | aa011e6",aa011f6,REF-196,Bosta,8007640884
-EXC-10492,منى عبد الرحمن محمود,01287654321,,"[1] فستان كتان صيفي مطرز - كحلي / L | Ab056a0\n[2] طقم صلاه اطفالي مشجر - بينك / المقاس الرابع | ba51ei4",Ab056a0,REF-196,Bosta,G-09-8251439823
-10501,نورهان طارق السيد,01599887766,01099887766,"[1] عباية كريب ملكي كلوش - أسود / 56 | Ac010bn9",Ac010bn9,REF-196,Bosta,E-07-357595273`;
-
-    this.pdfNotesMap.set('8007640884', 'تغيير الموديل Ab056a0 - اسدال عباية - اسود / برجاء معاينة الشحنة قبل الاستلام');
-    this.pdfNotesMap.set('8251439823', 'أوردر استبدال عاجل - استلام المرتجع أولاً');
-    this.dom.pdfNotesCountBadge.classList.remove('hidden');
-    this.dom.pdfNotesCountNum.textContent = '2';
-
-    Papa.parse(sampleCsv, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        this.dom.csvFileName.textContent = 'بيانات تجريبية (Demo Batch REF-196)';
-        this.processParsedCsv(results.data);
-      }
-    });
   }
 }
 

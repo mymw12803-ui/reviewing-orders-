@@ -1,18 +1,21 @@
 /**
  * CatalogManager - Shopify Storefront Catalog & Image Cache
- * Powered by Dexie.js IndexedDB wrapper for 0ms offline access.
- * Implements 3-Level matching (Exact SKU -> Prefix Model/Color -> Arabic Title)
- * and background image preloading.
+ * Powered by Dexie.js with Background Auto-Sync:
+ * 1. Loads local Dexie cached catalog in 0ms on startup.
+ * 2. Silently verifies and updates products from https://khiam.store in the background.
+ * 3. 3-Level matching hierarchy (Exact SKU -> Prefix Model/Color -> Arabic Title).
+ * 4. Automatic background image preloading for uploaded batches.
  */
 
 class CatalogManager {
   constructor() {
     this.shopDomain = localStorage.getItem('khiam_shop_domain') || 'khiam.store';
-    this.memoryVariants = new Map(); // cleanSku -> { sku, title, variantTitle, imageUrl, modelPrefix }
+    this.memoryVariants = new Map(); // cleanSku -> variant
     this.memoryPrefixes = new Map(); // prefix -> Array of variants
     this.productsList = [];
     this.stats = { totalProducts: 0, totalVariants: 0, lastSync: null };
     this.db = null;
+    this.isSyncing = false;
 
     this.initDexie();
   }
@@ -27,6 +30,11 @@ class CatalogManager {
           meta: '&key, value'
         });
         await this.loadAllFromDexie();
+        
+        // Trigger background silent auto-sync from Shopify 2 seconds after boot
+        setTimeout(() => {
+          this.triggerBackgroundAutoSync();
+        }, 2000);
       } else {
         console.warn('Dexie.js not loaded, using in-memory cache.');
       }
@@ -44,7 +52,6 @@ class CatalogManager {
   extractModelPrefix(sku) {
     if (!sku) return '';
     const clean = sku.trim().toLowerCase();
-    // Strip trailing digits (e.g. ba51ei3 -> ba51ei, Ac055an4 -> ac055an)
     const stripped = clean.replace(/\d+$/, '');
     if (stripped.length >= 4) return stripped;
     if (clean.length >= 5) return clean.slice(0, -1);
@@ -76,21 +83,42 @@ class CatalogManager {
       this.stats.lastSync = lastSyncMeta ? lastSyncMeta.value : null;
       this.stats.totalVariants = this.memoryVariants.size;
       this.stats.totalProducts = this.productsList.length;
+
+      // Broadcast loaded event for app.js UI
+      window.dispatchEvent(new CustomEvent('catalog-loaded', { detail: this.stats }));
     } catch (err) {
       console.warn('Error loading from Dexie:', err);
     }
   }
 
   /**
-   * CORS-safe fetch with fallbacks
+   * Background Auto-Sync: Updates catalog silently in the background
+   * without blocking or disrupting warehouse operation.
+   */
+  async triggerBackgroundAutoSync() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+    console.log('[Khiam Store] Starting background auto-sync from Shopify...');
+
+    try {
+      const result = await this.syncShopifyCatalog();
+      console.log(`[Khiam Store] Background auto-sync complete: ${result.productsCount} products, ${result.variantsCount} SKUs.`);
+      window.dispatchEvent(new CustomEvent('catalog-updated', { detail: this.stats }));
+    } catch (err) {
+      console.warn('[Khiam Store] Background auto-sync skipped (network or CORS limitation):', err.message);
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  /**
+   * CORS-safe fetch with reliable public proxies
    */
   async fetchWithCorsFallback(targetUrl) {
     try {
       const resp = await fetch(targetUrl, { headers: { 'Accept': 'application/json' }, cache: 'no-cache' });
       if (resp.ok) return await resp.json();
-    } catch (err) {
-      // Proxy fallback
-    }
+    } catch (err) {}
 
     const proxies = [
       (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
@@ -108,7 +136,7 @@ class CatalogManager {
       } catch (e) {}
     }
 
-    throw new Error('تعذر الوصول إلى متجر شوبيفاي بسبب قيود CORS أو انقطاع الاتصال.');
+    throw new Error('تعذر الوصول إلى متجر شوبيفاي');
   }
 
   /**
@@ -133,7 +161,7 @@ class CatalogManager {
           page,
           productsCount: totalProducts,
           variantsCount: totalVariants,
-          message: `جاري سحب الصفحة ${page} من المتجر (${baseHost})...`
+          message: `جاري سحب الصفحة ${page} من المتجر...`
         });
       }
 
@@ -203,7 +231,6 @@ class CatalogManager {
       page++;
     }
 
-    // Persist into Dexie
     if (this.db) {
       await this.db.transaction('rw', this.db.products, this.db.rawProducts, this.db.meta, async () => {
         await this.db.products.bulkPut(newVariants);
@@ -316,7 +343,7 @@ class CatalogManager {
   }
 
   /**
-   * Image Preloading into browser cache for 0ms picking latency
+   * Preload Images for current batch
    */
   async preloadImagesForOrders(orders, onProgress = null) {
     if (!orders || orders.length === 0) return 0;

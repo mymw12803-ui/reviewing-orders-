@@ -130,7 +130,7 @@
         </div>
 
         <!-- "Lost Item" Finder Mode Toggle Button -->
-        <button id="toggleLookupModeBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition" title="مسح صنف تائه لمعرفة العميل والبوليصة المطلوبة فيه">
+        <button id="toggleLookupModeBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition" title="مسح صنف تائه لمعرفة العميل والبوليصة المطلوبة فيها">
           <span>🔍</span>
           <span id="lookupModeBtnText">استعلام عن صنف تائه</span>
         </button>
@@ -153,7 +153,7 @@
           <span id="voiceStatusText">صوت: مفعّل</span>
         </button>
 
-        <!-- Sound Toggle & Test -->
+        <!-- Sound Toggle -->
         <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
           <button id="toggleSoundBtn" title="كتم / تشغيل نغمات النظام" class="p-1.5 rounded hover:bg-slate-700 text-slate-200 transition">
             <svg id="soundIconOn" class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +241,7 @@
     <!-- Top Action Bar: CSV Upload + PDF Bosta Reader + Manual Barcode Scanner -->
     <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
       
-      <!-- Files Upload & Sync Box -->
+      <!-- Files Upload Box -->
       <div class="lg:col-span-7 bg-slate-800/70 border border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center gap-2">
@@ -253,33 +253,30 @@
           <span id="csvFileName" class="text-xs text-slate-400 truncate max-w-[200px]">لم يتم اختيار ملف</span>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-3">
           
           <!-- CSV Upload -->
-          <label class="cursor-pointer bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5">
+          <label class="cursor-pointer bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
             </svg>
-            <span>شيت Operix CSV</span>
+            <span>تحميل شيت Operix CSV</span>
             <input type="file" id="csvFileInput" accept=".csv" class="hidden">
           </label>
 
           <!-- Bosta PDF Notes Upload -->
-          <label class="cursor-pointer bg-gradient-to-r from-amber-700 to-orange-600 hover:from-amber-600 hover:to-orange-500 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5" title="قراءة بوالص بوسطة PDF واستخراج الملاحظات والتعديلات تلقائياً">
+          <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 font-semibold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5" title="قراءة بوالص بوسطة PDF واستخراج الملاحظات والتعديلات تلقائياً">
             <span>📄</span>
-            <span>بوالص PDF (الملاحظات)</span>
+            <span>بوالص بوسطة PDF (الملاحظات)</span>
             <input type="file" id="pdfFileInput" accept=".pdf" class="hidden">
           </label>
 
-          <!-- Sample CSV Button -->
-          <button id="loadSampleCsvBtn" class="bg-slate-700/80 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-xs px-3 py-2.5 rounded-xl border border-slate-600 transition flex items-center gap-1">
-            <span>✨ ديمو</span>
-          </button>
+          <!-- Auto-Sync Status Badge -->
+          <div class="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/80 border border-slate-800 px-3 py-2 rounded-xl">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="autoSyncStatusText">الكتالوج متزامن في الخلفية</span>
+          </div>
 
-          <!-- Shopify Sync Quick Button -->
-          <button id="syncShopifyQuickBtn" class="bg-purple-900/60 hover:bg-purple-800/70 text-purple-200 hover:text-white font-medium text-xs px-3 py-2.5 rounded-xl border border-purple-700 transition flex items-center gap-1" title="مزامنة الكتالوج من شوبيفاي">
-            <span>🔄 صور شوبيفاي</span>
-          </button>
         </div>
       </div>
 
@@ -673,7 +670,7 @@
             class="w-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-purple-950/50 flex items-center justify-center gap-2 text-sm transition"
           >
             <span>🔄</span>
-            <span>بدء سحب الكتالوج الآن من شوبيفاي</span>
+            <span>بدء سحب وتحديث الكتالوج الآن من شوبيفاي</span>
           </button>
 
           <div class="grid grid-cols-2 gap-2.5">
