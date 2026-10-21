@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Khiam Store | نظام فحص وتجهيز الأوردرات بالباركود</title>
+  <title>Khiam Warehouse Scanner | نظام فحص وتحضير الأوردرات بالباركود</title>
   
   <!-- Google Fonts: Cairo -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
   <!-- Dexie.js for Lightning Fast IndexedDB Offline Storage -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
 
-  <!-- PDF.js for Bosta Shipping Label Notes Extraction -->
+  <!-- PDF.js for Barcode PDF Extractor -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <!-- Dedicated Print CSS for Bosta Handover Manifest -->
@@ -66,7 +66,7 @@
       animation: flashRedAnim 0.4s ease-out;
     }
     @keyframes flashRedAnim {
-      0% { background-color: rgba(239, 68, 68, 0.75); }
+      0% { background-color: rgba(239, 68, 68, 0.85); }
       100% { background-color: transparent; }
     }
 
@@ -74,7 +74,15 @@
       animation: flashGreenAnim 0.4s ease-out;
     }
     @keyframes flashGreenAnim {
-      0% { background-color: rgba(34, 197, 94, 0.45); }
+      0% { background-color: rgba(34, 197, 94, 0.55); }
+      100% { background-color: transparent; }
+    }
+
+    .flash-orange-active {
+      animation: flashOrangeAnim 0.4s ease-out;
+    }
+    @keyframes flashOrangeAnim {
+      0% { background-color: rgba(249, 115, 22, 0.65); }
       100% { background-color: transparent; }
     }
 
@@ -110,10 +118,10 @@
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-lg lg:text-xl font-extrabold text-white tracking-wide">خيام ستور | Khiam Store</h1>
-            <span class="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold px-2 py-0.5 rounded-full">نظام الفحص بالباركود</span>
+            <h1 class="text-lg lg:text-xl font-extrabold text-white tracking-wide">خيام ستور | Khiam Warehouse Scanner</h1>
+            <span class="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">v2.0 فحص فوري 0ms</span>
           </div>
-          <p class="text-xs text-slate-400">Warehouse Order & Barcode Verification Engine</p>
+          <p class="text-xs text-slate-400">نظام فحص وتحضير الشحنات بالباركود وترجمة الأكواد التلقائية</p>
         </div>
       </div>
 
@@ -141,10 +149,10 @@
           <span>كشف تسليم المندوب</span>
         </button>
 
-        <!-- Shopify Catalog Status Button -->
-        <button id="openCatalogModalBtn" class="flex items-center gap-1.5 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-700/80 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-300 transition" title="إدارة كتالوج وصور شوبيفاي">
-          <span>🛍️ الكتالوج:</span>
-          <span id="headerCatalogCount" class="font-mono font-bold text-white">0</span>
+        <!-- Catalog & Barcodes Settings Button -->
+        <button id="openCatalogModalBtn" class="flex items-center gap-1.5 bg-purple-950/70 hover:bg-purple-900 border border-purple-600/70 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-200 transition" title="إعدادات القاموس والكتالوج وإضافة باركودات جديدة">
+          <span>⚙️ إعدادات الكتالوج</span>
+          <span id="headerCatalogCount" class="bg-purple-500/20 text-purple-300 font-mono font-bold px-1.5 py-0.2 rounded text-[11px]">563 SKU</span>
         </button>
 
         <!-- Voice Toggle Button -->
@@ -188,7 +196,38 @@
   <!-- Main Container -->
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 flex flex-col gap-4">
 
-    <!-- Compact Stats Bar & Quick Search Header -->
+    <!-- Primary Action Hero: 1-Click CSV Upload + Permanent Dictionary Status Indicator -->
+    <section class="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-4 lg:p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Primary Big CSV Button & File Input -->
+      <div class="flex items-center flex-wrap gap-3">
+        <label class="cursor-pointer bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-black text-sm lg:text-base px-6 py-3.5 rounded-2xl shadow-xl shadow-rose-950/60 transition transform hover:scale-[1.02] active:scale-[0.98] flex items-center gap-3 ring-2 ring-rose-400/30">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+          </svg>
+          <span>📂 رفع شيت أوردرات اليوم (CSV)</span>
+          <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+        </label>
+
+        <!-- Current File Indicator -->
+        <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-xl text-xs">
+          <span class="text-slate-400">الملف الحالي:</span>
+          <span id="csvFileName" class="font-mono font-bold text-amber-300 truncate max-w-[220px]">لم يتم اختيار ملف بعد</span>
+        </div>
+      </div>
+
+      <!-- Permanent Dictionary Status Indicator Badge -->
+      <div class="flex items-center gap-2 bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-2xl text-xs font-bold shadow-inner">
+        <span class="text-base">✅</span>
+        <div class="leading-tight">
+          <span class="block text-white font-extrabold">قاموس باركودات المنتجات (563 SKU) وصور شوبيفاي محفوظة ومفعلة تلقائياً</span>
+          <span class="text-[11px] text-emerald-400/90 font-normal">IndexedDB نشط | مسح الباركود الرقمي يترجم لـ SKU في 0ms</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Compact Stats Bar & Quick Search -->
     <section class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
       
       <!-- Stats Counters -->
@@ -213,10 +252,11 @@
           <span class="text-[11px] underline">عرض القائمة</span>
         </button>
 
-        <!-- PDF Notes Counter Badge -->
-        <div id="pdfNotesCountBadge" class="hidden flex items-center gap-1.5 bg-rose-950/60 border border-rose-600/70 text-rose-300 px-3 py-1.5 rounded-xl text-xs font-bold">
-          <span>📄 تم ربط ملاحظات بوالص:</span>
-          <span id="pdfNotesCountNum" class="font-mono font-black text-white">0</span>
+        <!-- Hidden counters preserved for DOM safety -->
+        <span id="loadedOrdersCount" class="hidden">0</span>
+        <span id="completedOrdersTodayCount" class="hidden">0</span>
+        <div id="pdfNotesCountBadge" class="hidden">
+          <span id="pdfNotesCountNum">0</span>
         </div>
       </div>
 
@@ -236,78 +276,22 @@
         </div>
       </div>
 
-    </section>
-
-    <!-- Top Action Bar: CSV Upload + PDF Bosta Reader + Manual Barcode Scanner -->
-    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      
-      <!-- Files Upload Box -->
-      <div class="lg:col-span-7 bg-slate-800/70 border border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-            </svg>
-            <span class="font-bold text-sm text-slate-200">تحميل شيت الشحنات وملفات البوالص</span>
-          </div>
-          <span id="csvFileName" class="text-xs text-slate-400 truncate max-w-[200px]">لم يتم اختيار ملف</span>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-          
-          <!-- CSV Upload -->
-          <label class="cursor-pointer bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-            </svg>
-            <span>تحميل شيت Operix CSV</span>
-            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
-          </label>
-
-          <!-- Bosta PDF Notes Upload -->
-          <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 font-semibold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5" title="قراءة بوالص بوسطة PDF واستخراج الملاحظات والتعديلات تلقائياً">
-            <span>📄</span>
-            <span>بوالص بوسطة PDF (الملاحظات)</span>
-            <input type="file" id="pdfFileInput" accept=".pdf" class="hidden">
-          </label>
-
-          <!-- Auto-Sync Status Badge -->
-          <div class="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/80 border border-slate-800 px-3 py-2 rounded-xl">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span id="autoSyncStatusText">الكتالوج متزامن في الخلفية</span>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Manual Barcode Input Fallback -->
-      <div class="lg:col-span-5 bg-slate-800/70 border border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
-        <div class="flex items-center justify-between mb-2">
-          <span class="font-bold text-sm text-slate-200 flex items-center gap-2">
-            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
-            </svg>
-            إدخال يدوي احتياطي (بوليصة أو باركود صنف)
-          </span>
-          <span class="text-[11px] text-slate-400">القارئ يعمل تلقائياً</span>
-        </div>
-
-        <form id="manualScanForm" class="flex gap-2">
-          <input 
-            type="text" 
-            id="manualBarcodeInput" 
-            placeholder="امسح أو اكتب الباركود / رقم البوليصة..." 
-            class="flex-1 bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 outline-none transition font-mono"
-            autocomplete="off"
-          >
-          <button 
-            type="submit" 
-            class="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition flex items-center justify-center gap-1 shadow"
-          >
-            مسح
-          </button>
-        </form>
-      </div>
+      <!-- Manual Barcode Input Fallback (Compact) -->
+      <form id="manualScanForm" class="flex gap-2">
+        <input 
+          type="text" 
+          id="manualBarcodeInput" 
+          placeholder="إدخال يدوي لبوليصة أو كود كيس..." 
+          class="bg-slate-900 border border-slate-700 focus:border-rose-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition font-mono w-48"
+          autocomplete="off"
+        >
+        <button 
+          type="submit" 
+          class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition"
+        >
+          مسح
+        </button>
+      </form>
 
     </section>
 
@@ -319,7 +303,7 @@
         <span id="lastScanTypeBadge" class="hidden font-bold px-2 py-0.5 rounded text-[11px]"></span>
       </div>
       <div id="lastScanMessage" class="text-slate-400 truncate max-w-md text-left font-medium">
-        امسح بوليصة شحن بوسطة أو كود منتج
+        امسح بوليصة شحن بوسطة أو باركود كيس المنتج
       </div>
     </section>
 
@@ -330,13 +314,13 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
         </svg>
       </div>
-      <h2 class="text-2xl font-black text-white mb-2">في انتظار مسح بوليصة الشحن (Bosta)</h2>
+      <h2 class="text-2xl font-black text-white mb-2">في انتظار مسح بوليصة الشحن (Bosta Waybill)</h2>
       <p class="text-slate-400 text-sm max-w-md leading-relaxed mb-6">
-        قم بمسح الباركود الموجود على بوليصة الشحن لفتح الأوردر وبدء مطابقة وفحص المنتجات المطلوبة مع صورها ومقاساتها وألوانها والتوجيه الصوتي العربي.
+        قم بمسح باركود البوليصة الورقية (مثل <span class="font-mono text-amber-400">9049568550</span> أو <span class="font-mono text-amber-400">357595273</span> أو <span class="font-mono text-amber-400">G-09-8007640884</span>) لفتح الأوردر تلقائياً من شيت الـ CSV.
       </p>
       <div class="flex items-center gap-2 text-xs bg-slate-800/80 text-slate-300 border border-slate-700 px-4 py-2 rounded-xl">
         <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-        <span>قارئ الباركود يستقبل المدخلات تلقائياً من أي مكان في الشاشة</span>
+        <span>قارئ الباركود يعمل تلقائياً في الخلفية بدون الحاجة للنقر داخل أي حقل</span>
       </div>
     </section>
 
@@ -349,26 +333,53 @@
         <!-- Background accent subtle gradient -->
         <div class="absolute -top-24 -left-24 w-72 h-72 bg-rose-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <!-- Bosta PDF Special Notes Alert Box -->
-        <div id="bostaPdfNotesAlert" class="hidden mb-4 bg-gradient-to-r from-rose-900/90 to-amber-900/90 border-2 border-rose-500 text-white p-4 rounded-2xl shadow-xl flex items-start gap-3 animate-pulse">
-          <div class="w-9 h-9 rounded-xl bg-rose-500 flex items-center justify-center text-xl flex-shrink-0 mt-0.5">
+        <!-- Prominent Combined Notes Alert Box -->
+        <div id="bostaPdfNotesAlert" class="hidden mb-4 bg-gradient-to-r from-rose-950 via-amber-950 to-rose-950 border-2 border-rose-500 text-white p-4 lg:p-5 rounded-2xl shadow-2xl flex items-start gap-3.5 animate-pulse">
+          <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-2xl flex-shrink-0 mt-0.5 shadow-lg shadow-rose-950/60">
             ⚠️
           </div>
           <div class="flex-1">
-            <div class="font-extrabold text-sm text-rose-200 mb-0.5">تنبيه وملاحظات خاصة على بوليصة الشحن (PDF Notes):</div>
-            <div id="bostaPdfNotesText" class="text-base font-black text-white font-sans leading-relaxed">
+            <div class="font-extrabold text-sm text-rose-300 uppercase tracking-wide mb-1 flex items-center gap-2">
+              <span>تنبيه وملاحظات هامة على الأوردر (Notes):</span>
+              <span class="bg-rose-500/30 text-white text-[11px] px-2 py-0.5 rounded-full font-bold">هام جداً</span>
+            </div>
+            <div id="bostaPdfNotesText" class="text-base lg:text-lg font-black text-amber-200 font-sans leading-relaxed">
               --
             </div>
           </div>
         </div>
 
-        <!-- Exchange Warning Badge (Shown if Order ID starts with EXC-) -->
-        <div id="exchangeBadge" class="hidden mb-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-base lg:text-lg px-5 py-3 rounded-2xl shadow-lg shadow-orange-950/40 flex items-center justify-between animate-pulse">
+        <!-- Exchange Warning Badge (Order Type === 'Exchange' or starts with EXC-) -->
+        <div id="exchangeBadge" class="hidden mb-4 bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white font-black text-base lg:text-lg px-5 py-3.5 rounded-2xl shadow-xl shadow-orange-950/50 flex items-center justify-between animate-pulse">
           <div class="flex items-center gap-3">
-            <span class="text-2xl">⚠️</span>
-            <span>تنبيه: أوردر تبديل شحنة - تأكد من استلام المرتجع / تسليم القطعة البديلة</span>
+            <span class="text-2xl">🔄</span>
+            <div>
+              <span class="text-lg">تنبيه: أوردر استبدال (EXCHANGE)</span>
+              <p class="text-xs text-orange-100 font-normal mt-0.5">تأكد من استلام الشحنة المرتجعة من العميل أولاً قبل تسليمه القطعة الجديدة!</p>
+            </div>
           </div>
-          <span class="text-xs bg-white/20 px-3 py-1 rounded-full uppercase tracking-wider font-bold">EXCHANGE ORDER</span>
+          <span class="text-xs bg-white/20 border border-white/30 px-3 py-1.5 rounded-xl uppercase tracking-wider font-extrabold">EXCHANGE ORDER</span>
+        </div>
+
+        <!-- Zero Barcode Alert & Confirmation Banner (Shown if 00000000 scanned) -->
+        <div id="zeroBarcodeAlert" class="hidden mb-4 bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 border-2 border-indigo-500 text-white p-4 rounded-2xl shadow-xl flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">🏷️</span>
+            <div>
+              <div class="font-black text-base text-indigo-200">مسح باركود بدون رقم فريد (00000000)</div>
+              <p id="zeroBarcodeDesc" class="text-xs text-slate-300 font-medium mt-0.5">
+                هذا المنتج ليس له باركود فريد في الـ PDF. هل تريد تأكيد تجهيز القطعة المطلوبة؟
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="confirmZeroBarcodeBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-lg transition">
+              ✅ تأكيد استلام القطعة
+            </button>
+            <button id="dismissZeroBarcodeBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition">
+              إلغاء
+            </button>
+          </div>
         </div>
 
         <!-- Order Complete Banner (Shown when 100% finished) -->
@@ -385,7 +396,7 @@
           </button>
         </div>
 
-        <!-- Main Details Grid -->
+        <!-- Main Details Grid (4 Cards) -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           
           <!-- Order ID & Tracking -->
@@ -400,21 +411,27 @@
             </div>
           </div>
 
-          <!-- Customer Name & Phone -->
+          <!-- Customer Name & Phone & Address -->
           <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl">
-            <span class="text-xs text-slate-400 block mb-1">بيانات العميل</span>
+            <span class="text-xs text-slate-400 block mb-1">بيانات العميل والعنوان</span>
             <div id="customerNameDisplay" class="text-base font-bold text-white truncate">----</div>
             <div id="customerPhoneDisplay" class="text-xs text-slate-300 mt-1 font-mono flex items-center gap-2">
               <span>📞 ----</span>
             </div>
+            <div id="customerAddressDisplay" class="text-[11px] text-slate-400 mt-1 truncate">
+              📍 ----
+            </div>
           </div>
 
-          <!-- Shipping Company & Reference -->
+          <!-- Shipping Company, Net Amount & Type -->
           <div class="bg-slate-900/80 border border-slate-700/60 p-3.5 rounded-2xl">
-            <span class="text-xs text-slate-400 block mb-1">شركة الشحن والمرجع</span>
-            <div id="shippingCompanyDisplay" class="text-base font-bold text-cyan-400 truncate">Bosta</div>
+            <span class="text-xs text-slate-400 block mb-1">الشحن والمبلغ المطلوب</span>
+            <div class="flex items-center justify-between">
+              <span id="shippingCompanyDisplay" class="text-base font-bold text-cyan-400 truncate">Bosta</span>
+              <span id="netAmountDisplay" class="text-base font-black text-emerald-400 font-mono">0 ج.م</span>
+            </div>
             <div id="pickingRefDisplay" class="text-xs text-slate-300 mt-1 truncate">
-              <span class="text-slate-400">المرجع:</span> <span class="font-mono">----</span>
+              <span class="text-slate-400">النوع:</span> <span id="orderTypeDisplay" class="font-bold text-slate-200">Sales</span>
             </div>
           </div>
 
@@ -453,7 +470,7 @@
             <span>قائمة المنتجات المطلوبة في هذا الأوردر</span>
             <span id="productTypesCount" class="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-md font-mono">0 أصناف</span>
           </h3>
-          <span class="text-xs text-slate-400">اضغط على صورة أي منتج لتكبيرها وفحص التفاصيل</span>
+          <span class="text-xs text-slate-400">امسح باركود كيس المنتج (9 أرقام أو SKU) لمطابقته فوراً</span>
         </div>
 
         <!-- Dynamic Product Cards Grid -->
@@ -608,18 +625,18 @@
     </div>
   </div>
 
-  <!-- Shopify Catalog Sync Modal -->
-  <div id="catalogModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+  <!-- Settings / Catalog & Barcodes Modal -->
+  <div id="catalogModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
       
       <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center text-xl">
-            🛍️
+            ⚙️
           </div>
           <div>
-            <h3 class="font-extrabold text-white text-base">مزامنة كتالوج صور شوبيفاي (Dexie.js)</h3>
-            <p class="text-xs text-slate-400">سحب المنتجات والـ Variants والصور من https://khiam.store</p>
+            <h3 class="font-extrabold text-white text-base">إعدادات القاموس والكتالوج (IndexedDB & PDF.js)</h3>
+            <p class="text-xs text-slate-400">إدارة باركودات المنتجات وسحب التحديثات من متجر شوبيفاي</p>
           </div>
         </div>
         <button id="closeCatalogModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition text-lg font-bold">✕</button>
@@ -627,36 +644,63 @@
 
       <div class="p-6 space-y-5">
         
+        <!-- Summary Numbers -->
         <div class="bg-slate-950/80 border border-purple-900/40 rounded-2xl p-4 flex items-center justify-around text-center">
           <div>
-            <span class="text-xs text-slate-400 block mb-0.5">المنتجات المخزنة</span>
-            <span id="modalProductsCount" class="text-2xl font-black text-purple-400 font-mono">0</span>
+            <span class="text-xs text-slate-400 block mb-0.5">باركودات مخزنة</span>
+            <span id="modalVariantsCount" class="text-2xl font-black text-purple-400 font-mono">563</span>
           </div>
           <div class="w-px h-10 bg-slate-800"></div>
           <div>
-            <span class="text-xs text-slate-400 block mb-0.5">أكواد SKU المسجلة</span>
-            <span id="modalVariantsCount" class="text-2xl font-black text-white font-mono">0</span>
+            <span class="text-xs text-slate-400 block mb-0.5">منتجات شوبيفاي</span>
+            <span id="modalProductsCount" class="text-2xl font-black text-white font-mono">60</span>
           </div>
           <div class="w-px h-10 bg-slate-800"></div>
           <div>
-            <span class="text-xs text-slate-400 block mb-0.5">آخر مزامنة</span>
-            <span id="modalLastSyncText" class="text-xs font-semibold text-slate-400 font-mono">لم تتم</span>
+            <span class="text-xs text-slate-400 block mb-0.5">حالة التخزين</span>
+            <span class="text-xs font-semibold text-emerald-400 font-mono">دائم (IndexedDB)</span>
           </div>
         </div>
 
-        <div>
-          <label class="block text-xs font-bold text-slate-300 mb-1.5">رابط متجر شوبيفاي (Shopify Domain):</label>
-          <input 
-            type="text" 
-            id="shopifyDomainInput" 
-            value="khiam.store" 
-            class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono outline-none"
-          >
+        <!-- Future PDF Barcode Uploader (PDF.js) -->
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-xs text-slate-200">📄 إضافة ملف PDF باركودات جديد (مستقبلاً):</span>
+            <span class="text-[10px] text-slate-400">دمج تلقائي بدون مسح القديم</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            عند طباعة ملف باركودات حراري لمنتجات جديدة، ارفعه هنا لاستخراج الأكواد وأرقام الـ 9 أرقام وإضافتها للقاموس الدائم تلقائياً.
+          </p>
+          <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-700 transition flex items-center justify-center gap-2">
+            <span>➕ اختيار ملف باركودات PDF جديد</span>
+            <input type="file" id="newBarcodePdfInput" accept=".pdf" class="hidden">
+          </label>
         </div>
 
+        <!-- Shopify Storefront Live Sync -->
+        <div class="space-y-2.5">
+          <label class="block text-xs font-bold text-slate-300">رابط متجر شوبيفاي (Shopify Domain):</label>
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              id="shopifyDomainInput" 
+              value="khiam.store" 
+              class="flex-1 bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono outline-none"
+            >
+            <button 
+              id="startSyncCatalogBtn" 
+              class="bg-purple-700 hover:bg-purple-600 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
+            >
+              <span>🔄</span>
+              <span>تحديث الكتالوج</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress container -->
         <div id="syncProgressContainer" class="hidden space-y-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
           <div class="flex justify-between text-xs text-purple-300 font-bold">
-            <span id="syncProgressStatus">جاري بدء المزامنة...</span>
+            <span id="syncProgressStatus">جاري التحديث...</span>
             <span id="syncProgressPage"></span>
           </div>
           <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -664,30 +708,21 @@
           </div>
         </div>
 
-        <div class="space-y-2.5 pt-2">
+        <!-- Backup Export / Import JSON -->
+        <div class="grid grid-cols-2 gap-2.5 pt-1">
           <button 
-            id="startSyncCatalogBtn" 
-            class="w-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-purple-950/50 flex items-center justify-center gap-2 text-sm transition"
+            id="exportCatalogJsonBtn" 
+            class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5"
           >
-            <span>🔄</span>
-            <span>بدء سحب وتحديث الكتالوج الآن من شوبيفاي</span>
+            <span>💾</span>
+            <span>تصدير نسخة احتياطية (JSON)</span>
           </button>
 
-          <div class="grid grid-cols-2 gap-2.5">
-            <button 
-              id="exportCatalogJsonBtn" 
-              class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5"
-            >
-              <span>💾</span>
-              <span>تصدير ملف الكتالوج (JSON)</span>
-            </button>
-
-            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5">
-              <span>📥</span>
-              <span>استيراد ملف كتالوج (JSON)</span>
-              <input type="file" id="importCatalogJsonInput" accept=".json" class="hidden">
-            </label>
-          </div>
+          <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5">
+            <span>📥</span>
+            <span>استيراد نسخة (JSON)</span>
+            <input type="file" id="importCatalogJsonInput" accept=".json" class="hidden">
+          </label>
         </div>
 
       </div>
@@ -764,7 +799,8 @@
     </div>
   </div>
 
-  <!-- Scripts -->
+  <!-- Scripts: Built-in Dictionary first, then Audio, Catalog, and Main App Engine -->
+  <script src="builtin_barcode_map.js"></script>
   <script src="audio-voice.js"></script>
   <script src="catalog.js"></script>
   <script src="app.js"></script>

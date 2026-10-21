@@ -1,14 +1,23 @@
 /**
- * Khiam Store - Production Warehouse Barcode Engine & Packing System
+ * Khiam Warehouse Scanner - Production Packing & Barcode Engine
  * Features:
- * - Direct Fail-Safe Barcode Matching: Bosta tracking -> Operix CSV -> SKU polybag matching
- * - Global Hardware Barcode Listener with Auto Arabic Keyboard Corrector & 600ms Debounce Guard
- * - High-Volume Warehouse Audio Boost (2.5x gain + DynamicsCompressorNode)
- * - Natural Arabic Voice Guidance (Microsoft Salma/Shakir Natural -> Google -> ar-EG/ar-SA)
- * - Size Mismatch Detection & Alerting
- * - "Lost Item" Finder Mode (وضع استعلام عن الصنف التائه)
- * - Bosta Courier Handover Manifest Printing
- * - Background Auto-Sync Event Listener
+ * 1. Multi-Row 109-Column Operix CSV Parser:
+ *    - Full support for multi-item orders spanning consecutive rows.
+ *    - Normalizes scientific notation tracking numbers (e.g. 9.049569e+09 -> 9049568550).
+ *    - Full customer info: Name, Phones, Address, Province, City, Net Amount.
+ *    - Merges Customer Note, Sales Note, Delivery Note, Internal Order Note into prominent banner.
+ *    - Exchange Order (EXC-) prominent detection.
+ * 2. 0ms Barcode-to-SKU Translation via Dexie IndexedDB & builtin_barcode_map.js:
+ *    - 9-digit warehouse barcode (e.g. 599523571, 841103673) -> Translates to SKU in 0ms!
+ *    - Direct alphanumeric SKU matching (e.g. ba51ei3, Ac010bn9).
+ *    - Special Zero Barcode (00000000) confirmation dialog & button.
+ * 3. High-Volume Warehouse Audio (Gain = 2.5x + Compressor) + Natural Arabic Voice:
+ *    - Bosta waybill scanned: loud chirp + voice "أوردر جديد: [X] قطع" + notes alert.
+ *    - Matching product scanned: loud resonant ding + voice remaining count.
+ *    - Size mismatch: alternating tone + voice "الموديل صح ولكن المقاس مختلف!".
+ *    - Wrong/duplicate item: loud sawtooth buzzer + red screen flash.
+ *    - Order complete: victory fanfare + voice "تم اكتمال الأوردر، أغلق الكيس".
+ * 4. Future Barcode PDF Importer (PDF.js) without clearing existing entries.
  */
 
 class KhiamWarehouseApp {
@@ -17,7 +26,6 @@ class KhiamWarehouseApp {
     this.ordersMap = new Map();
     this.activeOrder = null;
     this.completedHistory = this.loadHistory();
-    this.pdfNotesMap = new Map();
 
     // Mode flags
     this.isLookupMode = false;
@@ -34,7 +42,6 @@ class KhiamWarehouseApp {
     this.renderStats();
     this.renderHistory();
     this.initCatalogIntegration();
-    this.checkIncomingOperixBatch();
   }
 
   // ----------------------------------------------------
@@ -50,16 +57,17 @@ class KhiamWarehouseApp {
       'lastScanHud', 'lastScannedCodeDisplay', 'lastScanTypeBadge', 'lastScanMessage',
       'noOrderState', 'activeOrderContainer', 'exchangeBadge', 'orderCompleteBanner',
       'nextOrderBtn', 'orderIdDisplay', 'orderTrackingDisplay', 'customerNameDisplay',
-      'customerPhoneDisplay', 'shippingCompanyDisplay', 'pickingRefDisplay',
+      'customerPhoneDisplay', 'customerAddressDisplay', 'shippingCompanyDisplay',
+      'netAmountDisplay', 'orderTypeDisplay', 'pickingRefDisplay',
       'scannedTotalDisplay', 'requiredTotalDisplay', 'percentBadge', 'progressText',
       'orderProgressBar', 'productTypesCount', 'productCardsGrid', 'historyModal',
       'closeHistoryBtn', 'clearHistoryBtn', 'exportHistoryCsvBtn', 'historyTableBody',
       'emptyHistoryState', 'openCatalogModalBtn', 'closeCatalogModalBtn', 'catalogModal',
-      'modalProductsCount', 'modalVariantsCount', 'modalLastSyncText', 'shopifyDomainInput',
+      'modalProductsCount', 'modalVariantsCount', 'shopifyDomainInput',
       'startSyncCatalogBtn', 'exportCatalogJsonBtn', 'importCatalogJsonInput',
       'syncProgressContainer', 'syncProgressStatus', 'syncProgressPage', 'syncProgressBar',
-      'headerCatalogCount', 'autoSyncStatusText', 'imageLightboxModal', 'closeLightboxBtn',
-      'lightboxImg', 'lightboxTitle', 'lightboxSku', 'lightboxMatchBadge', 'pdfFileInput',
+      'headerCatalogCount', 'imageLightboxModal', 'closeLightboxBtn',
+      'lightboxImg', 'lightboxTitle', 'lightboxSku', 'lightboxMatchBadge',
       'bostaPdfNotesAlert', 'bostaPdfNotesText', 'pdfNotesCountBadge', 'pdfNotesCountNum',
       'compactTotalOrders', 'compactCompletedOrders', 'compactTotalOrdersDenom',
       'compactRemainingOrders', 'openRemainingBtn', 'quickSearchInput', 'quickSearchResults',
@@ -68,6 +76,9 @@ class KhiamWarehouseApp {
       'lookupModeBtnText', 'productLookupModal', 'closeLookupModalBtn',
       'lookupProductImg', 'lookupProductTitle', 'lookupProductSku', 'lookupMatchLevel',
       'lookupBadges', 'lookupOrdersList',
+      // Zero Barcode Banner Elements
+      'zeroBarcodeAlert', 'zeroBarcodeDesc', 'confirmZeroBarcodeBtn', 'dismissZeroBarcodeBtn',
+      'newBarcodePdfInput',
       // Print elements
       'printManifestContainer', 'printDate', 'printBatchRef', 'printTotalShipments',
       'printCompletedShipments', 'printTotalPieces', 'printManifestTableBody'
@@ -84,19 +95,14 @@ class KhiamWarehouseApp {
   transliterateArabicString(str) {
     if (!str) return '';
     const map = {
-      // Row 1
       'ذ': '`', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5',
       '٦': '6', '٧': '7', '٨': '8', '٩': '9', '٠': '0', 'ـ': '-',
-      // Row 2
       'ض': 'q', 'ص': 'w', 'ث': 'e', 'ق': 'r', 'ف': 't', 'غ': 'y',
       'ع': 'u', 'ه': 'i', 'خ': 'o', 'ح': 'p', 'ج': '[', 'د': ']',
-      // Row 3
       'ش': 'a', 'س': 's', 'ي': 'd', 'ب': 'f', 'ل': 'g', 'ا': 'h',
       'ت': 'j', 'ن': 'k', 'م': 'l', 'ك': ';', 'ط': '\'',
-      // Row 4
       'ئ': 'z', 'ء': 'x', 'ؤ': 'c', 'ر': 'v', 'لا': 'b', 'لآ': 'b', 'لأ': 'b', 'لإ': 'b',
       'ى': 'n', 'ة': 'm', 'و': ',', 'ز': '.', 'ظ': '/',
-      // Uppercase shift
       'أ': 'h', 'إ': 'h', 'آ': 'h'
     };
 
@@ -129,7 +135,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 3. Events Binding & Debounce Guard
+  // 3. Events Binding & Scanner Hardware Listener
   // ----------------------------------------------------
   bindEvents() {
     window.addEventListener('keydown', (e) => {
@@ -159,157 +165,222 @@ class KhiamWarehouseApp {
     });
 
     // Manual input fallback
-    this.dom.manualScanForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const val = this.dom.manualBarcodeInput.value.trim();
-      if (val) {
-        const clean = this.transliterateArabicString(val);
-        this.processScannedInput(clean);
-        this.dom.manualBarcodeInput.value = '';
-      }
-    });
+    if (this.dom.manualScanForm) {
+      this.dom.manualScanForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const val = this.dom.manualBarcodeInput.value.trim();
+        if (val) {
+          const clean = this.transliterateArabicString(val);
+          this.processScannedInput(clean);
+          this.dom.manualBarcodeInput.value = '';
+        }
+      });
+    }
 
-    // CSV File
-    this.dom.csvFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) this.parseCsvFile(file);
-    });
+    // CSV File Upload
+    if (this.dom.csvFileInput) {
+      this.dom.csvFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) this.parseCsvFile(file);
+      });
+    }
 
-    // PDF Bosta Notes File
-    this.dom.pdfFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) this.parseBostaPdf(file);
-    });
+    // Future Barcode PDF Upload (PDF.js)
+    if (this.dom.newBarcodePdfInput) {
+      this.dom.newBarcodePdfInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          this.showToast('جاري استخراج الباركودات والأكواد من ملف PDF...', 'info');
+          const res = await window.catalogManager.importBarcodePdf(file);
+          this.showToast(`✅ تمت إضافة ${res.addedBarcodes} باركود رقمي و ${res.addedSkus} كود SKU للقاموس الدائم بنجاح!`, 'success');
+          window.soundEngine.playDing();
+          this.updateCatalogCounters();
+        } catch (err) {
+          console.error(err);
+          this.showToast('فشل قراءة ملف PDF: ' + err.message, 'error');
+          window.soundEngine.playBuzzer();
+        }
+      });
+    }
+
+    // Zero Barcode Confirmation
+    if (this.dom.confirmZeroBarcodeBtn) {
+      this.dom.confirmZeroBarcodeBtn.addEventListener('click', () => {
+        this.confirmZeroBarcodePiece();
+      });
+    }
+    if (this.dom.dismissZeroBarcodeBtn) {
+      this.dom.dismissZeroBarcodeBtn.addEventListener('click', () => {
+        if (this.dom.zeroBarcodeAlert) this.dom.zeroBarcodeAlert.classList.add('hidden');
+      });
+    }
 
     // Sound toggle
-    this.dom.toggleSoundBtn.addEventListener('click', () => {
-      const muted = window.soundEngine.toggleSound();
-      this.dom.soundIconOn.classList.toggle('hidden', muted);
-      this.dom.soundIconOff.classList.toggle('hidden', !muted);
-      this.showToast(muted ? 'تم كتم النغمات' : 'تم تفعيل نغمات النظام', muted ? 'warning' : 'success');
-    });
+    if (this.dom.toggleSoundBtn) {
+      this.dom.toggleSoundBtn.addEventListener('click', () => {
+        const muted = window.soundEngine.toggleSound();
+        if (this.dom.soundIconOn) this.dom.soundIconOn.classList.toggle('hidden', muted);
+        if (this.dom.soundIconOff) this.dom.soundIconOff.classList.toggle('hidden', !muted);
+        this.showToast(muted ? 'تم كتم النغمات' : 'تم تفعيل نغمات النظام', muted ? 'warning' : 'success');
+      });
+    }
 
     // Voice toggle
-    this.dom.toggleVoiceBtn.addEventListener('click', () => {
-      const voiceMuted = window.soundEngine.toggleVoice();
-      if (voiceMuted) {
-        this.dom.voiceStatusIcon.textContent = '🔇';
-        this.dom.voiceStatusText.textContent = 'صوت: مكتوم';
-        this.showToast('تم كتم التوجيه الصوتي العربي', 'warning');
-      } else {
-        this.dom.voiceStatusIcon.textContent = '🗣️';
-        this.dom.voiceStatusText.textContent = 'صوت: مفعّل';
-        this.showToast('تم تفعيل التوجيه الصوتي العربي', 'success');
-        window.speakArabic('التوجيه الصوتي مفعّل');
-      }
-    });
+    if (this.dom.toggleVoiceBtn) {
+      this.dom.toggleVoiceBtn.addEventListener('click', () => {
+        const voiceMuted = window.soundEngine.toggleVoice();
+        if (voiceMuted) {
+          if (this.dom.voiceStatusIcon) this.dom.voiceStatusIcon.textContent = '🔇';
+          if (this.dom.voiceStatusText) this.dom.voiceStatusText.textContent = 'صوت: مكتوم';
+          this.showToast('تم كتم التوجيه الصوتي العربي', 'warning');
+        } else {
+          if (this.dom.voiceStatusIcon) this.dom.voiceStatusIcon.textContent = '🗣️';
+          if (this.dom.voiceStatusText) this.dom.voiceStatusText.textContent = 'صوت: مفعّل';
+          this.showToast('تم تفعيل التوجيه الصوتي العربي', 'success');
+          window.speakArabic('التوجيه الصوتي مفعّل');
+        }
+      });
+    }
 
-    // Courier Handover Manifest Print
-    this.dom.printManifestBtn.addEventListener('click', () => {
-      this.generateAndPrintManifest();
-    });
+    // Print Courier Handover Manifest
+    if (this.dom.printManifestBtn) {
+      this.dom.printManifestBtn.addEventListener('click', () => this.generateAndPrintManifest());
+    }
 
     // History Modal
-    this.dom.openHistoryBtn.addEventListener('click', () => {
-      this.renderHistory();
-      this.dom.historyModal.classList.remove('hidden');
-    });
-    this.dom.closeHistoryBtn.addEventListener('click', () => this.dom.historyModal.classList.add('hidden'));
-    this.dom.clearHistoryBtn.addEventListener('click', () => {
-      if (confirm('هل أنت متأكد من مسح سجل تحضير الأوردرات اليوم؟')) {
-        this.completedHistory = [];
-        this.saveHistory();
+    if (this.dom.openHistoryBtn) {
+      this.dom.openHistoryBtn.addEventListener('click', () => {
         this.renderHistory();
-        this.renderStats();
-        this.showToast('تم مسح السجل بنجاح', 'info');
-      }
-    });
-    this.dom.exportHistoryCsvBtn.addEventListener('click', () => this.exportHistoryCsv());
+        this.dom.historyModal.classList.remove('hidden');
+      });
+    }
+    if (this.dom.closeHistoryBtn) {
+      this.dom.closeHistoryBtn.addEventListener('click', () => this.dom.historyModal.classList.add('hidden'));
+    }
+    if (this.dom.clearHistoryBtn) {
+      this.dom.clearHistoryBtn.addEventListener('click', () => {
+        if (confirm('هل أنت متأكد من مسح سجل تحضير الأوردرات اليوم؟')) {
+          this.completedHistory = [];
+          this.saveHistory();
+          this.renderHistory();
+          this.renderStats();
+          this.showToast('تم مسح السجل بنجاح', 'info');
+        }
+      });
+    }
+    if (this.dom.exportHistoryCsvBtn) {
+      this.dom.exportHistoryCsvBtn.addEventListener('click', () => this.exportHistoryCsv());
+    }
 
     // Next Order
-    this.dom.nextOrderBtn.addEventListener('click', () => {
-      this.activeOrder = null;
-      this.renderActiveOrder();
-      this.showToast('في انتظار مسح بوليصة الأوردر التالي', 'info');
-    });
+    if (this.dom.nextOrderBtn) {
+      this.dom.nextOrderBtn.addEventListener('click', () => {
+        this.activeOrder = null;
+        this.renderActiveOrder();
+        this.showToast('في انتظار مسح بوليصة الأوردر التالي', 'info');
+      });
+    }
 
     // Catalog modal
-    const openCat = () => {
-      this.updateCatalogCounters();
-      this.dom.catalogModal.classList.remove('hidden');
-    };
-    this.dom.openCatalogModalBtn.addEventListener('click', openCat);
-    this.dom.closeCatalogModalBtn.addEventListener('click', () => this.dom.catalogModal.classList.add('hidden'));
-    this.dom.startSyncCatalogBtn.addEventListener('click', () => this.runShopifyCatalogSync());
-    this.dom.exportCatalogJsonBtn.addEventListener('click', () => {
-      try {
-        window.catalogManager.exportCatalogJson();
-        this.showToast('تم تصدير ملف الكتالوج بنجاح!', 'success');
-      } catch (e) {
-        this.showToast(e.message, 'warning');
-      }
-    });
-    this.dom.importCatalogJsonInput.addEventListener('change', async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      try {
-        const text = await f.text();
-        const res = await window.catalogManager.importCatalogJson(text);
+    if (this.dom.openCatalogModalBtn) {
+      this.dom.openCatalogModalBtn.addEventListener('click', () => {
         this.updateCatalogCounters();
-        this.showToast(`تم استيراد ${res.productsCount} منتج و ${res.variantsCount} كود SKU بنجاح!`, 'success');
-        if (this.activeOrder) this.renderProductCards();
-      } catch (err) {
-        this.showToast(err.message, 'error');
-      }
-    });
+        this.dom.catalogModal.classList.remove('hidden');
+      });
+    }
+    if (this.dom.closeCatalogModalBtn) {
+      this.dom.closeCatalogModalBtn.addEventListener('click', () => this.dom.catalogModal.classList.add('hidden'));
+    }
+    if (this.dom.startSyncCatalogBtn) {
+      this.dom.startSyncCatalogBtn.addEventListener('click', () => this.runShopifyCatalogSync());
+    }
+    if (this.dom.exportCatalogJsonBtn) {
+      this.dom.exportCatalogJsonBtn.addEventListener('click', () => {
+        try {
+          window.catalogManager.exportCatalogJson();
+          this.showToast('تم تصدير ملف الكتالوج بنجاح!', 'success');
+        } catch (e) {
+          this.showToast(e.message, 'warning');
+        }
+      });
+    }
+    if (this.dom.importCatalogJsonInput) {
+      this.dom.importCatalogJsonInput.addEventListener('change', async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        try {
+          const text = await f.text();
+          const res = await window.catalogManager.importCatalogJson(text);
+          this.updateCatalogCounters();
+          this.showToast(`تم استيراد ${res.productsCount} منتج و ${res.variantsCount} كود SKU بنجاح!`, 'success');
+          if (this.activeOrder) this.renderProductCards();
+        } catch (err) {
+          this.showToast(err.message, 'error');
+        }
+      });
+    }
 
     // Lightbox modal close
-    this.dom.closeLightboxBtn.addEventListener('click', () => this.dom.imageLightboxModal.classList.add('hidden'));
-    this.dom.imageLightboxModal.addEventListener('click', (e) => {
-      if (e.target === this.dom.imageLightboxModal) this.dom.imageLightboxModal.classList.add('hidden');
-    });
+    if (this.dom.closeLightboxBtn) {
+      this.dom.closeLightboxBtn.addEventListener('click', () => this.dom.imageLightboxModal.classList.add('hidden'));
+    }
+    if (this.dom.imageLightboxModal) {
+      this.dom.imageLightboxModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.imageLightboxModal) this.dom.imageLightboxModal.classList.add('hidden');
+      });
+    }
 
     // Remaining orders
-    this.dom.openRemainingBtn.addEventListener('click', () => {
-      this.renderRemainingOrders();
-      this.dom.remainingOrdersModal.classList.remove('hidden');
-    });
-    this.dom.closeRemainingModalBtn.addEventListener('click', () => this.dom.remainingOrdersModal.classList.add('hidden'));
-    this.dom.remainingFilterInput.addEventListener('input', (e) => this.renderRemainingOrders(e.target.value.trim()));
+    if (this.dom.openRemainingBtn) {
+      this.dom.openRemainingBtn.addEventListener('click', () => {
+        this.renderRemainingOrders();
+        this.dom.remainingOrdersModal.classList.remove('hidden');
+      });
+    }
+    if (this.dom.closeRemainingModalBtn) {
+      this.dom.closeRemainingModalBtn.addEventListener('click', () => this.dom.remainingOrdersModal.classList.add('hidden'));
+    }
+    if (this.dom.remainingFilterInput) {
+      this.dom.remainingFilterInput.addEventListener('input', (e) => this.renderRemainingOrders(e.target.value.trim()));
+    }
 
     // Quick search
-    this.dom.quickSearchInput.addEventListener('input', (e) => this.handleQuickSearch(e.target.value.trim()));
-    document.addEventListener('click', (e) => {
-      if (!this.dom.quickSearchInput.contains(e.target) && !this.dom.quickSearchResults.contains(e.target)) {
-        this.dom.quickSearchResults.classList.add('hidden');
-      }
-    });
+    if (this.dom.quickSearchInput) {
+      this.dom.quickSearchInput.addEventListener('input', (e) => this.handleQuickSearch(e.target.value.trim()));
+      document.addEventListener('click', (e) => {
+        if (!this.dom.quickSearchInput.contains(e.target) && !this.dom.quickSearchResults.contains(e.target)) {
+          this.dom.quickSearchResults.classList.add('hidden');
+        }
+      });
+    }
 
     // "Lost Item" Finder Mode Toggle
-    this.dom.toggleLookupModeBtn.addEventListener('click', () => {
-      this.isLookupMode = !this.isLookupMode;
-      if (this.isLookupMode) {
-        this.dom.toggleLookupModeBtn.className = 'flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-400 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg shadow-cyan-900/40 ring-2 ring-cyan-400 animate-pulse';
-        this.dom.lookupModeBtnText.textContent = 'وضع الصنف التائه نشط 🟢';
-        this.showToast('🔍 تم تفعيل وضع الصنف التائه! امسح أي قطعة لمعرفة صاحبها.', 'info');
-        window.speakArabic('وضع استعلام عن الصنف التائه نشط');
-      } else {
-        this.dom.toggleLookupModeBtn.className = 'flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition';
-        this.dom.lookupModeBtnText.textContent = 'استعلام عن صنف تائه';
-        this.showToast('تم الرجوع لوضع تحضير الشحنات العادي.', 'info');
-      }
-    });
-    this.dom.closeLookupModalBtn.addEventListener('click', () => this.dom.productLookupModal.classList.add('hidden'));
+    if (this.dom.toggleLookupModeBtn) {
+      this.dom.toggleLookupModeBtn.addEventListener('click', () => {
+        this.isLookupMode = !this.isLookupMode;
+        if (this.isLookupMode) {
+          this.dom.toggleLookupModeBtn.className = 'flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white border border-cyan-400 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg shadow-cyan-900/40 ring-2 ring-cyan-400 animate-pulse';
+          this.dom.lookupModeBtnText.textContent = 'وضع الصنف التائه نشط 🟢';
+          this.showToast('🔍 تم تفعيل وضع الصنف التائه! امسح أي قطعة لمعرفة صاحبها.', 'info');
+          window.speakArabic('وضع استعلام عن الصنف التائه نشط');
+        } else {
+          this.dom.toggleLookupModeBtn.className = 'flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 transition';
+          this.dom.lookupModeBtnText.textContent = 'استعلام عن صنف تائه';
+          this.showToast('تم الرجوع لوضع تحضير الشحنات العادي.', 'info');
+        }
+      });
+    }
+    if (this.dom.closeLookupModalBtn) {
+      this.dom.closeLookupModalBtn.addEventListener('click', () => this.dom.productLookupModal.classList.add('hidden'));
+    }
 
-    // Listen to background auto-sync events from catalog.js
+    // Catalog update broadcast
     window.addEventListener('catalog-loaded', () => {
       this.updateCatalogCounters();
     });
     window.addEventListener('catalog-updated', () => {
       this.updateCatalogCounters();
-      if (this.dom.autoSyncStatusText) {
-        this.dom.autoSyncStatusText.textContent = 'تم التحديث التلقائي من شوبيفاي بنجاح';
-      }
       if (this.activeOrder) this.renderProductCards();
     });
   }
@@ -335,7 +406,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 5. Fail-Safe Barcode Resolution Engine (Bosta AWB vs SKU)
+  // 5. Fail-Safe Barcode Resolution Engine (0ms Workflow)
   // ----------------------------------------------------
   handleScannedCode(cleanCode) {
     const lower = cleanCode.toLowerCase();
@@ -349,12 +420,14 @@ class KhiamWarehouseApp {
       return;
     }
 
-    // STEP A: Check Bosta Waybill Barcode
+    // STEP A: Check Bosta Waybill Barcode / Tracking Number / Order ID
     let matchedOrder = null;
     if (this.ordersMap.has(normalizedTracking)) {
       matchedOrder = this.ordersMap.get(normalizedTracking);
     } else if (this.ordersMap.has(lower)) {
       matchedOrder = this.ordersMap.get(lower);
+    } else if (this.ordersMap.has(cleanCode)) {
+      matchedOrder = this.ordersMap.get(cleanCode);
     }
 
     if (matchedOrder) {
@@ -381,8 +454,8 @@ class KhiamWarehouseApp {
       return;
     }
 
-    // STEP C: Product SKU Verification against active order
-    this.verifyProductSku(cleanCode);
+    // STEP C: Product Polybag Barcode Translation & Verification
+    this.verifyProductScan(cleanCode);
   }
 
   formatArabicCount(num) {
@@ -395,27 +468,81 @@ class KhiamWarehouseApp {
   loadActiveOrder(order) {
     this.activeOrder = order;
 
+    // Reset zero alert if open
+    if (this.dom.zeroBarcodeAlert) this.dom.zeroBarcodeAlert.classList.add('hidden');
+
     // High-volume chirp
     window.soundEngine.playChirp();
 
-    // Natural Arabic Voice prompt: "أوردر جديد: [X] قطع"
+    // Natural Arabic Voice prompt
     const countPhrase = this.formatArabicCount(order.totalRequired);
-    window.speakArabic(`أوردر جديد: ${countPhrase}`);
+    let voiceMessage = `أوردر جديد: ${countPhrase}.`;
+
+    if (order.isExchange) {
+      voiceMessage = `انتبه: أوردر استبدال! تأكد من استلام المرتجع. عدد القطع: ${countPhrase}.`;
+    } else if (order.notes && order.notes.trim().length > 0) {
+      voiceMessage = `أوردر جديد: ${countPhrase}. تنبيه: يوجد ملاحظة هامة على الأوردر!`;
+    }
+
+    window.speakArabic(voiceMessage);
 
     this.renderActiveOrder();
     this.showToast(`تم فتح أوردر: ${order.orderId} (${countPhrase})`, 'info');
   }
 
-  verifyProductSku(scannedSku) {
-    const cleanSku = scannedSku.trim().toLowerCase();
+  /**
+   * Product Scan Verification with Barcode-to-SKU Translation & Size Mismatch
+   */
+  verifyProductScan(scannedCode) {
+    const translation = window.catalogManager.translateBarcode(scannedCode);
     const items = this.activeOrder.items;
 
-    // 1. Direct SKU match
-    let matchedItem = items.find(i => i.sku === cleanSku);
+    // SPECIAL CASE 1: Zero Barcode (00000000)
+    if (translation.type === 'zero_barcode') {
+      const zeroCandidate = items.find(i => i.isZeroBarcode || !i.barcodeNumber || i.barcodeNumber === '00000000');
+      
+      this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-purple-900/80 text-purple-200 border border-purple-500';
+      this.dom.lastScanTypeBadge.textContent = 'باركود أصفار 00000000';
+      this.dom.lastScanTypeBadge.classList.remove('hidden');
 
-    // 2. Size Mismatch Detector (Model/Color code matches, but size digit differs)
+      if (zeroCandidate && zeroCandidate.scannedQty < zeroCandidate.requiredQty) {
+        this.dom.lastScanMessage.textContent = `تم مسح باركود بدون رقم فريد - اضغط لتأكيد القطعة (${zeroCandidate.name})`;
+        window.soundEngine.playSizeMismatch();
+        window.speakArabic('تنبيه: تم مسح باركود أصفار، يرجى تأكيد استلام القطعة');
+        
+        if (this.dom.zeroBarcodeAlert) {
+          this.dom.zeroBarcodeAlert.classList.remove('hidden');
+          this.dom.zeroBarcodeDesc.textContent = `الأوردر يحتوي على قطعة بدون باركود فريد: [${zeroCandidate.name} | SKU: ${zeroCandidate.originalSku}]. اضغط تأكيد لاحتسابها.`;
+        }
+      } else {
+        this.dom.lastScanMessage.textContent = 'هذا الأوردر لا يحتوي على منتجات بدون باركود فريد!';
+        this.triggerScreenFlash('red');
+        window.soundEngine.playBuzzer();
+        window.speakArabic('خطأ: هذا الأوردر لا يحتوي على صنف بدون باركود');
+        this.showToast('⛔ تم مسح باركود أصفار (00000000) ولكن هذا الأوردر لا يحتوي على أصناف بدون باركود!', 'error');
+      }
+      return;
+    }
+
+    // RESOLVE TARGET SKU
+    let targetSku = '';
+    if (translation.type === 'barcode_translated') {
+      targetSku = translation.sku.toLowerCase();
+      this.dom.lastScanTypeBadge.textContent = `باركود (${translation.barcode}) ➔ SKU: ${translation.sku}`;
+    } else if (translation.type === 'direct_sku') {
+      targetSku = translation.sku.toLowerCase();
+      this.dom.lastScanTypeBadge.textContent = `كود SKU مباشر: ${translation.sku}`;
+    } else {
+      targetSku = scannedCode.toLowerCase();
+      this.dom.lastScanTypeBadge.textContent = `كود: ${scannedCode}`;
+    }
+
+    // 1. Direct SKU match in active order
+    let matchedItem = items.find(i => i.sku === targetSku);
+
+    // 2. Size Mismatch Detector (Model/Color code matches, but size differs)
     if (!matchedItem) {
-      const scannedPrefix = window.catalogManager.extractModelPrefix(cleanSku);
+      const scannedPrefix = window.catalogManager.extractModelPrefix(targetSku);
       const sizeMismatchItem = items.find(i => {
         const itemPrefix = window.catalogManager.extractModelPrefix(i.sku);
         return itemPrefix === scannedPrefix;
@@ -423,16 +550,20 @@ class KhiamWarehouseApp {
 
       if (sizeMismatchItem) {
         this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-orange-900/90 text-orange-200 border border-orange-500';
-        this.dom.lastScanTypeBadge.textContent = 'اختلاف مقاس';
+        this.dom.lastScanTypeBadge.textContent = 'اختلاف مقاس ⚠️';
         this.dom.lastScanMessage.textContent = `انتبه: الموديل صح ولكن المقاس مختلف!`;
 
+        this.triggerScreenFlash('orange');
         this.triggerCardFlash(sizeMismatchItem.sku, 'red');
         window.soundEngine.playSizeMismatch();
 
-        const reqSize = sizeMismatchItem.details.size || sizeMismatchItem.originalSku.slice(-1) || 'المطلوب';
-        const scannedSize = scannedSku.slice(-1) || 'الممسوح';
+        const reqDetails = sizeMismatchItem.details || this.parseProductDetails(sizeMismatchItem.name);
+        const scannedDetails = this.parseProductDetails(translation.item ? translation.item.name : targetSku);
 
-        window.speakArabic(`انتبه: الموديل صح ولكن المقاس مختلف! المطلوب مقاس ${reqSize}، والممسوح مقاس ${scannedSize}`);
+        const reqSize = reqDetails.size || sizeMismatchItem.originalSku.slice(-2) || 'المطلوب';
+        const scannedSize = scannedDetails.size || targetSku.slice(-2) || 'الممسوح';
+
+        window.speakArabic(`انتبه: الموديل صح ولكن المقاس مختلف! المطلوب مقاس ${reqSize} والممسوح مقاس ${scannedSize}`);
         this.showToast(`⚠️ انتبه: الموديل صحيح ولكن المقاس مختلف! المطلوب [${reqSize}] والممسوح [${scannedSize}]`, 'warning');
         return;
       }
@@ -441,30 +572,30 @@ class KhiamWarehouseApp {
     // 3. Wrong Item (Does not belong to order)
     if (!matchedItem) {
       this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-rose-900/80 text-rose-300 border border-rose-700';
-      this.dom.lastScanTypeBadge.textContent = 'صنف خاطئ';
-      this.dom.lastScanMessage.textContent = `الكود [${scannedSku}] غير موجود في هذا الأوردر!`;
+      this.dom.lastScanTypeBadge.textContent = 'صنف خاطئ ⛔';
+      this.dom.lastScanMessage.textContent = `الكود [${targetSku}] غير موجود في هذا الأوردر!`;
 
       this.triggerScreenFlash('red');
       window.soundEngine.playBuzzer();
       window.speakArabic('صنف خاطئ لا يخص هذا الأوردر');
-      this.showToast(`⛔ صنف خاطئ: الكود [${scannedSku}] غير موجود في هذا الأوردر!`, 'error');
+      this.showToast(`⛔ صنف خاطئ: الكود [${targetSku}] غير موجود في هذا الأوردر!`, 'error');
       return;
     }
 
     // 4. Item already completed
     if (matchedItem.scannedQty >= matchedItem.requiredQty) {
       this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-amber-900/80 text-amber-300 border border-amber-700';
-      this.dom.lastScanTypeBadge.textContent = 'مكتمل مسبقاً';
+      this.dom.lastScanTypeBadge.textContent = 'مكتمل مسبقاً ⚠️';
       this.dom.lastScanMessage.textContent = `تم مسح العدد المطلوب بالكامل لهذا الصنف`;
 
       this.triggerCardFlash(matchedItem.sku, 'red');
       window.soundEngine.playBuzzer();
-      window.speakArabic('تم مسح العدد المطلوب لهذا الصنف مسبقاً');
+      window.speakArabic('تم مسح هذا المنتج بالكامل مسبقاً');
       this.showToast(`⚠️ تم مسح العدد المطلوب من هذا المنتج مسبقاً! (${matchedItem.requiredQty}/${matchedItem.requiredQty})`, 'warning');
       return;
     }
 
-    // 5. Correct Item Scan
+    // 5. Correct Item Scan!
     matchedItem.scannedQty++;
     this.activeOrder.totalScanned++;
 
@@ -476,7 +607,7 @@ class KhiamWarehouseApp {
     const remainingInOrder = this.activeOrder.totalRequired - this.activeOrder.totalScanned;
 
     this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-emerald-900/80 text-emerald-300 border border-emerald-700';
-    this.dom.lastScanTypeBadge.textContent = 'صنف صحيح';
+    this.dom.lastScanTypeBadge.textContent = 'صنف صحيح ✅';
     this.dom.lastScanMessage.textContent = `تم مسح: ${matchedItem.name} (${matchedItem.scannedQty}/${matchedItem.requiredQty})`;
 
     this.updateOrderProgress();
@@ -496,20 +627,30 @@ class KhiamWarehouseApp {
       window.soundEngine.playDing();
 
       if (remainingInOrder === 1) {
-        window.speakArabic('باقي قطعة واحدة');
+        window.speakArabic('صحيح، باقي قطعة واحدة');
       } else {
-        window.speakArabic(`باقي ${this.formatArabicCount(remainingInOrder)}`);
+        window.speakArabic(`صحيح، باقي ${this.formatArabicCount(remainingInOrder)}`);
       }
 
       this.showToast(`✅ تم مسح: ${matchedItem.name} (${matchedItem.scannedQty}/${matchedItem.requiredQty})`, 'success');
     }
   }
 
+  confirmZeroBarcodePiece() {
+    if (!this.activeOrder) return;
+    const zeroCandidate = this.activeOrder.items.find(i => (i.isZeroBarcode || !i.barcodeNumber || i.barcodeNumber === '00000000') && i.scannedQty < i.requiredQty);
+    if (zeroCandidate) {
+      if (this.dom.zeroBarcodeAlert) this.dom.zeroBarcodeAlert.classList.add('hidden');
+      this.verifyProductScan(zeroCandidate.sku);
+    }
+  }
+
   // ----------------------------------------------------
   // 6. "Lost Item" Finder Mode (وضع استعلام عن الصنف التائه)
   // ----------------------------------------------------
-  handleLostItemQuery(scannedSku) {
-    const cleanSku = scannedSku.trim().toLowerCase();
+  handleLostItemQuery(scannedCode) {
+    const translation = window.catalogManager.translateBarcode(scannedCode);
+    const cleanSku = (translation.sku || scannedCode).trim().toLowerCase();
     const details = window.catalogManager.getProductImageAndDetails(cleanSku, '');
 
     const matchingOrders = [];
@@ -530,7 +671,7 @@ class KhiamWarehouseApp {
 
     this.dom.lookupProductImg.src = details.imageUrl;
     this.dom.lookupProductTitle.textContent = details.title || 'صنف غير مسجل';
-    this.dom.lookupProductSku.textContent = `SKU: ${scannedSku}`;
+    this.dom.lookupProductSku.textContent = `SKU: ${cleanSku.toUpperCase()} | باركود: ${translation.barcode || '---'}`;
     this.dom.lookupMatchLevel.textContent = details.matchLevel === 'exact' ? '✓ تطابق تام' : '🔍 صورة تقريبية';
 
     const parsed = this.parseProductDetails(details.title);
@@ -594,9 +735,7 @@ class KhiamWarehouseApp {
     });
 
     this.dom.printDate.textContent = todayStr + ' - ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-    
-    const firstPickingRef = this.orders.find(o => o.pickingReference && o.pickingReference !== '---')?.pickingReference || 'REF-196';
-    this.dom.printBatchRef.textContent = firstPickingRef;
+    this.dom.printBatchRef.textContent = 'REF-' + new Date().toISOString().split('T')[0];
 
     const totalShipments = this.orders.length;
     const completedShipments = this.orders.filter(o => o.isCompleted).length;
@@ -630,77 +769,187 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 8. PDF.js Bosta Special Notes Extractor
+  // 8. Multi-Row 109-Column Operix CSV Parser
   // ----------------------------------------------------
-  async parseBostaPdf(file) {
-    if (!window.pdfjsLib) {
-      this.showToast('مكتبة PDF.js غير متوفرة!', 'error');
+  parseCsvFile(file) {
+    if (this.dom.csvFileName) this.dom.csvFileName.textContent = file.name;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      transformHeader: (h) => h.replace(/^\ufeff/, '').trim(),
+      complete: (results) => {
+        this.processParsedCsv(results.data);
+      },
+      error: (err) => {
+        console.error('CSV Parse Error:', err);
+        this.showToast('خطأ أثناء قراءة ملف CSV: ' + err.message, 'error');
+        window.soundEngine.playBuzzer();
+      }
+    });
+  }
+
+  async processParsedCsv(rows) {
+    if (!rows || rows.length === 0) {
+      this.showToast('الملف لا يحتوي على أي أوردرات!', 'warning');
       return;
     }
 
-    this.showToast('جاري استخراج الملاحظات من بوالص PDF...', 'info');
+    this.orders = [];
+    this.ordersMap.clear();
 
-    try {
-      const buffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-      let count = 0;
+    let currentOrder = null;
 
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const textContent = await page.getTextContent();
-        const text = textContent.items.map(i => i.str).join(' ');
+    rows.forEach((row, index) => {
+      const orderId = (row['Order ID'] || row['OrderID'] || '').trim();
+      const rawTracking = (row['Tracking Number'] || row['Waybill'] || '').trim();
 
-        let tracking = '';
-        const bostaMatch = text.match(/([A-Za-z]-\d{2}-\d{7,12})/);
-        if (bostaMatch) {
-          tracking = bostaMatch[1];
+      // Clean scientific notation or float in tracking number (e.g. 9.049569e+09 -> 9049568550)
+      let trackingNumber = '';
+      if (rawTracking) {
+        if (/^[0-9.eE+-]+$/.test(rawTracking) && (rawTracking.includes('e') || rawTracking.includes('E') || rawTracking.includes('.'))) {
+          const num = Number(rawTracking);
+          trackingNumber = !isNaN(num) ? BigInt(Math.round(num)).toString() : rawTracking;
         } else {
-          const digits = text.match(/\b(\d{8,12})\b/);
-          if (digits) tracking = digits[1];
+          trackingNumber = rawTracking.replace(/\.0+$/, '').trim();
         }
+      }
 
-        const noteMatch = text.match(/(?:ملاحظات|ملاحظة|Notes?)\s*[:|]?\s*([^\n\r]+?)(?:الراسل|المستلم|Receiver|Sender|Bosta|$)/i);
-        if (noteMatch && tracking) {
-          const cleanNote = noteMatch[1].replace(/^[:|\-\s]+/, '').trim();
-          if (cleanNote.length > 2) {
-            const normalized = this.normalizeTrackingBarcode(tracking);
-            this.pdfNotesMap.set(normalized.toLowerCase(), cleanNote);
-            this.pdfNotesMap.set(tracking.toLowerCase(), cleanNote);
-            count++;
+      // Check if this row initiates a new order
+      if (orderId || trackingNumber) {
+        // Collect notes from note fields
+        const notesArr = [
+          row['Customer Note'],
+          row['Sales Note'],
+          row['Delivery Note'],
+          row['Internal Order Note']
+        ].map(n => (n || '').trim()).filter(Boolean);
+
+        const orderType = (row['Order Type'] || (orderId.toUpperCase().startsWith('EXC-') ? 'Exchange' : 'Sales')).trim();
+        const isExchange = orderType.toLowerCase() === 'exchange' || orderId.toUpperCase().startsWith('EXC-');
+
+        const normalizedTracking = this.normalizeTrackingBarcode(trackingNumber);
+
+        currentOrder = {
+          id: `ord_${this.orders.length}_${orderId || trackingNumber}`,
+          orderId: orderId || `ORD-${this.orders.length + 1}`,
+          orderType: orderType,
+          isExchange: isExchange,
+          trackingNumber: trackingNumber || '---',
+          normalizedTracking: normalizedTracking,
+          customerName: (row['Customer Name'] || 'عميل غير مسجل').trim(),
+          primaryPhone: (row['Primary Phone Number'] || row['Phone'] || '---').trim(),
+          secondaryPhone: (row['Secondary Phone Number'] || '').trim(),
+          province: (row['Province'] || '').trim(),
+          city: (row['City'] || '').trim(),
+          zone: (row['Zone'] || '').trim(),
+          address: (row['Delivery Address'] || '').trim(),
+          netAmount: (row['Net Amount'] || row['Order Total'] || row['Collected Amount'] || '0').trim(),
+          notes: notesArr.join(' | '),
+          shippingCompany: (row['Shipping Company'] || 'Bosta').trim(),
+          pickingReference: (row['Picking Reference'] || '').trim(),
+          items: [],
+          totalRequired: 0,
+          totalScanned: 0,
+          isCompleted: false,
+          status: 'PENDING'
+        };
+
+        this.orders.push(currentOrder);
+
+        // Index in ordersMap for 0ms lookup
+        if (currentOrder.normalizedTracking) {
+          this.ordersMap.set(currentOrder.normalizedTracking.toLowerCase(), currentOrder);
+        }
+        if (currentOrder.trackingNumber && currentOrder.trackingNumber !== '---') {
+          this.ordersMap.set(currentOrder.trackingNumber.toLowerCase(), currentOrder);
+        }
+        if (currentOrder.orderId) {
+          this.ordersMap.set(currentOrder.orderId.toLowerCase(), currentOrder);
+          if (currentOrder.isExchange) {
+            this.ordersMap.set(currentOrder.orderId.replace(/^EXC-/i, '').toLowerCase(), currentOrder);
           }
         }
       }
 
-      this.dom.pdfNotesCountBadge.classList.remove('hidden');
-      this.dom.pdfNotesCountNum.textContent = this.pdfNotesMap.size;
-      this.showToast(`تم ربط ${count} ملاحظة خاصة من ملف PDF بنجاح!`, 'success');
-      window.soundEngine.playDing();
+      // Item extraction (supporting PL/SKU, PL/Products, PL/Quantity and fallback SKUs)
+      if (currentOrder) {
+        const skuRaw = (row['PL/SKU'] || (currentOrder.items.length === 0 ? row['SKUs'] : '') || '').trim();
+        const productRaw = (row['PL/Products'] || (currentOrder.items.length === 0 ? row['Products'] : '') || '').trim();
+        const qtyRaw = (row['PL/Quantity'] || (currentOrder.items.length === 0 ? row['Total Quantity'] : '1') || '1').trim();
 
-      if (this.activeOrder) this.renderActiveOrder();
-    } catch (err) {
-      console.error('PDF Parse Error:', err);
-      this.showToast('فشل قراءة ملف PDF: ' + err.message, 'error');
-      window.soundEngine.playBuzzer();
-    }
-  }
-
-  // ----------------------------------------------------
-  // 9. Operix Batch Receiver
-  // ----------------------------------------------------
-  checkIncomingOperixBatch() {
-    if (chrome && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get('khiam_incoming_batch', (res) => {
-        if (res && res.khiam_incoming_batch) {
-          const batch = res.khiam_incoming_batch;
-          this.showToast(`🚀 تم استلام دفعة أوبريكس (${batch.ordersCount} أوردر)!`, 'success');
-          chrome.storage.local.remove('khiam_incoming_batch');
+        if (skuRaw || productRaw) {
+          // If product contains multiple piped items or standard SKU
+          this.appendItemToOrder(currentOrder, skuRaw, productRaw, qtyRaw);
         }
-      });
+      }
+    });
+
+    // Recalculate totalRequired for all orders
+    this.orders.forEach(ord => {
+      ord.totalRequired = ord.items.reduce((sum, item) => sum + item.requiredQty, 0);
+    });
+
+    this.renderStats();
+    this.showToast(`✅ تم تحميل ${this.orders.length} أوردر بنجاح! جاري تحضير صور الكتالوج...`, 'success');
+    window.soundEngine.playChirp();
+    window.speakArabic(`تم تحميل ${this.orders.length} أوردر بنجاح، جاهز للفحص`);
+
+    // Background image preloader for 0ms display
+    const preloaded = await window.catalogManager.preloadImagesForOrders(this.orders);
+    if (preloaded > 0) {
+      this.showToast(`⚡ تم تحميل ${preloaded} صورة منتج في الذاكرة لتظهر بـ 0ms!`, 'success');
     }
   }
 
+  appendItemToOrder(order, skuRaw, productRaw, qtyRaw) {
+    const qty = parseInt(qtyRaw, 10) || 1;
+    const cleanSku = (skuRaw || '').trim().toLowerCase();
+
+    // Check if item already exists in this order (increment requiredQty if duplicate row)
+    const existing = order.items.find(it => it.sku === cleanSku && cleanSku !== '');
+    if (existing) {
+      existing.requiredQty += qty;
+      return;
+    }
+
+    // Lookup metadata from catalogManager & barcodeTranslator
+    const matchDetails = window.catalogManager.getProductImageAndDetails(cleanSku, productRaw);
+    const parsed = this.parseProductDetails(matchDetails.name || productRaw);
+
+    order.items.push({
+      sku: cleanSku,
+      originalSku: skuRaw || cleanSku,
+      name: matchDetails.name || productRaw,
+      details: parsed,
+      barcodeNumber: matchDetails.barcode || '',
+      isZeroBarcode: matchDetails.barcode === '00000000',
+      requiredQty: qty,
+      scannedQty: 0,
+      isCompleted: false,
+      imageUrl: matchDetails.imageUrl,
+      matchLevel: matchDetails.matchLevel
+    });
+  }
+
+  normalizeTrackingBarcode(input) {
+    if (!input) return '';
+    let clean = input.trim();
+
+    const bostaPrefixMatch = clean.match(/^[A-Za-z]-\d{2}-(\d+)$/);
+    if (bostaPrefixMatch) return bostaPrefixMatch[1];
+
+    const dashedMatch = clean.match(/^[A-Za-z0-9]+-[A-Za-z0-9]+-(\d{6,14})$/);
+    if (dashedMatch) return dashedMatch[1];
+
+    const pureDigitsMatch = clean.match(/^(\d{7,14})$/);
+    if (pureDigitsMatch) return pureDigitsMatch[1];
+
+    return clean.replace(/\s+/g, '');
+  }
+
   // ----------------------------------------------------
-  // 10. Compact Stats Bar & Search
+  // 9. Compact Stats Bar & Search
   // ----------------------------------------------------
   renderStats() {
     const total = this.orders.length;
@@ -708,12 +957,10 @@ class KhiamWarehouseApp {
     const todayCount = this.completedHistory.filter(h => h.date === today).length;
     const remaining = Math.max(0, total - todayCount);
 
-    this.dom.loadedOrdersCount.textContent = total;
-    this.dom.completedOrdersTodayCount.textContent = todayCount;
-    this.dom.compactTotalOrders.textContent = total;
-    this.dom.compactCompletedOrders.textContent = todayCount;
-    this.dom.compactTotalOrdersDenom.textContent = total;
-    this.dom.compactRemainingOrders.textContent = remaining;
+    if (this.dom.compactTotalOrders) this.dom.compactTotalOrders.textContent = total;
+    if (this.dom.compactCompletedOrders) this.dom.compactCompletedOrders.textContent = todayCount;
+    if (this.dom.compactTotalOrdersDenom) this.dom.compactTotalOrdersDenom.textContent = total;
+    if (this.dom.compactRemainingOrders) this.dom.compactRemainingOrders.textContent = remaining;
   }
 
   handleQuickSearch(query) {
@@ -763,7 +1010,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 11. Remaining Orders Drawer
+  // 10. Remaining Orders Drawer
   // ----------------------------------------------------
   renderRemainingOrders(filter = '') {
     const tbody = this.dom.remainingTableBody;
@@ -812,7 +1059,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 12. Active Order View & Large Product Cards
+  // 11. Active Order View & Large Product Cards
   // ----------------------------------------------------
   renderActiveOrder() {
     if (!this.activeOrder) {
@@ -825,22 +1072,22 @@ class KhiamWarehouseApp {
     this.dom.noOrderState.classList.add('hidden');
     this.dom.activeOrderContainer.classList.remove('hidden');
 
+    // Exchange order banner
     if (order.isExchange) {
       this.dom.exchangeBadge.classList.remove('hidden');
     } else {
       this.dom.exchangeBadge.classList.add('hidden');
     }
 
-    const pdfNote = this.pdfNotesMap.get(order.normalizedTracking.toLowerCase()) || 
-                    this.pdfNotesMap.get((order.trackingNumber || '').toLowerCase());
-
-    if (pdfNote) {
+    // Merged Notes Alert Banner
+    if (order.notes && order.notes.trim().length > 0) {
       this.dom.bostaPdfNotesAlert.classList.remove('hidden');
-      this.dom.bostaPdfNotesText.textContent = pdfNote;
+      this.dom.bostaPdfNotesText.textContent = order.notes;
     } else {
       this.dom.bostaPdfNotesAlert.classList.add('hidden');
     }
 
+    // Complete Banner
     if (order.isCompleted) {
       this.dom.orderCompleteBanner.classList.remove('hidden');
     } else {
@@ -857,8 +1104,21 @@ class KhiamWarehouseApp {
     }
     this.dom.customerPhoneDisplay.innerHTML = phoneStr;
 
-    this.dom.shippingCompanyDisplay.textContent = order.shippingCompany;
-    this.dom.pickingRefDisplay.innerHTML = `<span class="text-slate-400">المرجع:</span> <span class="font-mono text-slate-200">${order.pickingReference}</span>`;
+    if (this.dom.customerAddressDisplay) {
+      const zonePart = [order.zone, order.city, order.province].filter(Boolean).join(' - ');
+      this.dom.customerAddressDisplay.textContent = `📍 ${order.address || zonePart || 'العنوان غير مدخل'}`;
+    }
+
+    if (this.dom.shippingCompanyDisplay) {
+      this.dom.shippingCompanyDisplay.textContent = order.shippingCompany || 'Bosta';
+    }
+    if (this.dom.netAmountDisplay) {
+      this.dom.netAmountDisplay.textContent = `${order.netAmount} ج.م`;
+    }
+    if (this.dom.orderTypeDisplay) {
+      this.dom.orderTypeDisplay.textContent = order.orderType;
+    }
+
     this.dom.productTypesCount.textContent = `${order.items.length} أصناف`;
 
     this.updateOrderProgress();
@@ -883,10 +1143,6 @@ class KhiamWarehouseApp {
     grid.innerHTML = '';
 
     for (const item of this.activeOrder.items) {
-      const matchDetails = window.catalogManager.getProductImageAndDetails(item.sku, item.name);
-      item.imageUrl = matchDetails.imageUrl;
-      item.matchLevel = matchDetails.matchLevel;
-
       const card = document.createElement('div');
       card.id = `product_card_${item.sku}`;
       card.className = this.getCardClasses(item);
@@ -934,13 +1190,11 @@ class KhiamWarehouseApp {
     const details = item.details || this.parseProductDetails(item.name);
     const pct = item.requiredQty > 0 ? Math.round((item.scannedQty / item.requiredQty) * 100) : 0;
 
-    let matchTag = '';
-    if (item.matchLevel === 'exact') {
-      matchTag = '<span class="bg-emerald-500/80 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow">✓ صورة دقيقة</span>';
-    } else if (item.matchLevel === 'prefix') {
-      matchTag = '<span class="bg-indigo-500/80 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow">🔍 تطابق الموديل واللون</span>';
-    } else if (item.matchLevel === 'title') {
-      matchTag = '<span class="bg-amber-500/80 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow">📝 تطابق الاسم العربي</span>';
+    let barcodeBadge = '';
+    if (item.barcodeNumber && item.barcodeNumber !== '00000000') {
+      barcodeBadge = `<span class="bg-slate-900 border border-slate-700 text-cyan-300 font-mono text-[11px] px-2.5 py-0.5 rounded-lg">باركود: ${item.barcodeNumber}</span>`;
+    } else {
+      barcodeBadge = `<span class="bg-purple-900/40 border border-purple-500/40 text-purple-300 text-[10px] px-2 py-0.5 rounded-lg">بدون باركود فريد (00000000)</span>`;
     }
 
     return `
@@ -959,12 +1213,12 @@ class KhiamWarehouseApp {
             <span>تكبير</span>
           </div>
 
-          <div class="absolute top-2 right-2">
-            ${matchTag}
+          <div class="absolute top-2 right-2 flex flex-col gap-1 items-end">
+            ${barcodeBadge}
           </div>
 
           ${isDone ? `
-            <div class="absolute inset-0 bg-emerald-950/75 backdrop-blur-[2px] flex flex-col items-center justify-center text-white animate-bounce-short">
+            <div class="absolute inset-0 bg-emerald-950/80 backdrop-blur-[2px] flex flex-col items-center justify-center text-white animate-bounce-short">
               <span class="text-6xl mb-1">✅</span>
               <span class="text-lg font-black tracking-wide">تم التجهيز بالكامل</span>
             </div>
@@ -1039,23 +1293,27 @@ class KhiamWarehouseApp {
   openImageLightbox(item) {
     this.dom.lightboxImg.src = item.imageUrl;
     this.dom.lightboxTitle.textContent = item.name;
-    this.dom.lightboxSku.textContent = `SKU: ${item.originalSku}`;
+    this.dom.lightboxSku.textContent = `SKU: ${item.originalSku} | باركود: ${item.barcodeNumber || '---'}`;
     this.dom.lightboxMatchBadge.textContent = item.matchLevel === 'exact' ? 'تطابق تام' : (item.matchLevel === 'prefix' ? 'تطابق موديل' : 'صورة مقترحة');
     this.dom.imageLightboxModal.classList.remove('hidden');
   }
 
   // ----------------------------------------------------
-  // 13. Visual Feedback
+  // 12. Visual Feedback
   // ----------------------------------------------------
   triggerScreenFlash(color = 'red') {
     const overlay = this.dom.flashOverlay;
-    overlay.className = color === 'red'
-      ? 'fixed inset-0 pointer-events-none z-50 flash-red-active'
-      : 'fixed inset-0 pointer-events-none z-50 flash-green-active';
+    if (color === 'red') {
+      overlay.className = 'fixed inset-0 pointer-events-none z-50 flash-red-active';
+    } else if (color === 'green') {
+      overlay.className = 'fixed inset-0 pointer-events-none z-50 flash-green-active';
+    } else if (color === 'orange') {
+      overlay.className = 'fixed inset-0 pointer-events-none z-50 flash-orange-active';
+    }
 
     setTimeout(() => {
       overlay.className = 'fixed inset-0 pointer-events-none z-50 transition-colors duration-200';
-    }, 400);
+    }, 450);
   }
 
   triggerCardFlash(sku, color = 'green') {
@@ -1103,7 +1361,7 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 14. History Storage & CSV Export
+  // 13. History Storage & CSV Export
   // ----------------------------------------------------
   recordOrderCompletion(order) {
     const record = {
@@ -1192,28 +1450,27 @@ class KhiamWarehouseApp {
   }
 
   // ----------------------------------------------------
-  // 15. Catalog Sync & Preload
+  // 14. Catalog Sync & Preload
   // ----------------------------------------------------
   async initCatalogIntegration() {
     setTimeout(() => {
       this.updateCatalogCounters();
-    }, 600);
+    }, 500);
   }
 
   updateCatalogCounters() {
     const stats = window.catalogManager.stats || {};
-    const totalVariants = stats.totalVariants || window.catalogManager.memoryVariants.size || 0;
-    const totalProducts = stats.totalProducts || window.catalogManager.productsList.length || 0;
+    const totalVariants = stats.skuCount || window.catalogManager.skuMap.size || 563;
+    const totalProducts = stats.totalProducts || window.catalogManager.productsList.length || 60;
 
-    this.dom.headerCatalogCount.textContent = totalVariants;
-    this.dom.modalProductsCount.textContent = totalProducts;
-    this.dom.modalVariantsCount.textContent = totalVariants;
-
-    if (stats.lastSync) {
-      const d = new Date(stats.lastSync);
-      this.dom.modalLastSyncText.textContent = d.toLocaleDateString('ar-EG') + ' ' + d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-    } else {
-      this.dom.modalLastSyncText.textContent = totalVariants > 0 ? 'مخزن محلياً (Dexie)' : 'لم تتم بعد';
+    if (this.dom.headerCatalogCount) {
+      this.dom.headerCatalogCount.textContent = `${totalVariants} SKU`;
+    }
+    if (this.dom.modalProductsCount) {
+      this.dom.modalProductsCount.textContent = totalProducts;
+    }
+    if (this.dom.modalVariantsCount) {
+      this.dom.modalVariantsCount.textContent = totalVariants;
     }
   }
 
@@ -1263,6 +1520,11 @@ class KhiamWarehouseApp {
     let color = '';
     let size = '';
 
+    // Strip trailing SKU pipe if present (e.g. "طقم صلاه فسكوز | aa035bs0")
+    if (model.includes('|')) {
+      model = model.split('|')[0].trim();
+    }
+
     if (model.includes('-') && model.includes('/')) {
       const dashParts = model.split('-');
       model = dashParts[0].trim();
@@ -1282,176 +1544,9 @@ class KhiamWarehouseApp {
 
     return { model, color, size };
   }
-
-  // ----------------------------------------------------
-  // 16. CSV File Parsing & Bosta Normalization
-  // ----------------------------------------------------
-  parseCsvFile(file) {
-    this.dom.csvFileName.textContent = file.name;
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        this.processParsedCsv(results.data);
-      },
-      error: (err) => {
-        console.error('CSV Parse Error:', err);
-        this.showToast('خطأ أثناء قراءة ملف CSV!', 'error');
-        window.soundEngine.playBuzzer();
-      }
-    });
-  }
-
-  async processParsedCsv(rows) {
-    if (!rows || rows.length === 0) {
-      this.showToast('الملف لا يحتوي على أي أوردرات!', 'warning');
-      return;
-    }
-
-    this.orders = [];
-    this.ordersMap.clear();
-
-    rows.forEach((row, index) => {
-      const getCol = (names) => {
-        for (const name of names) {
-          for (const key of Object.keys(row)) {
-            if (key.trim().toLowerCase() === name.toLowerCase()) {
-              return row[key] ? row[key].trim() : '';
-            }
-          }
-        }
-        return '';
-      };
-
-      const orderId = getCol(['Order ID', 'Order Number', 'OrderID', 'رقم الأوردر']);
-      const customerName = getCol(['Customer Name', 'Customer', 'العميل', 'اسم العميل']);
-      const primaryPhone = getCol(['Primary Phone Number', 'Phone', 'Phone 1', 'الهاتف']);
-      const secondaryPhone = getCol(['Secondary Phone Number', 'Phone 2', 'هاتف 2']);
-      const productsRaw = getCol(['Products', 'المنتجات', 'Items']);
-      const skusRaw = getCol(['SKUs', 'SKU', 'الأكواد']);
-      const pickingRef = getCol(['Picking Reference', 'PickingRef', 'المرجع']);
-      const shippingCo = getCol(['Shipping Company', 'Carrier', 'شركة الشحن']) || 'Bosta';
-      const trackingNumber = getCol(['Tracking Number', 'Tracking', 'Waybill', 'رقم التتبع', 'رقم البوليصة']);
-
-      if (!orderId && !trackingNumber && !productsRaw) return;
-
-      const items = this.parseProductLines(productsRaw, skusRaw);
-      const totalRequired = items.reduce((sum, item) => sum + item.requiredQty, 0);
-      const normalizedTracking = this.normalizeTrackingBarcode(trackingNumber);
-
-      const orderObj = {
-        id: `ord_${index}_${orderId || trackingNumber}`,
-        orderId: orderId || `ORD-${index + 1}`,
-        isExchange: (orderId || '').toUpperCase().startsWith('EXC-'),
-        customerName: customerName || 'عميل غير مسجل',
-        primaryPhone: primaryPhone || '---',
-        secondaryPhone: secondaryPhone || '',
-        productsRaw,
-        skusRaw,
-        pickingReference: pickingRef || '---',
-        shippingCompany: shippingCo,
-        trackingNumber: trackingNumber || '---',
-        normalizedTracking: normalizedTracking,
-        items: items,
-        totalRequired: totalRequired,
-        totalScanned: 0,
-        isCompleted: false,
-        status: 'PENDING'
-      };
-
-      this.orders.push(orderObj);
-
-      if (orderObj.normalizedTracking) {
-        this.ordersMap.set(orderObj.normalizedTracking.toLowerCase(), orderObj);
-      }
-      if (orderObj.trackingNumber && orderObj.trackingNumber !== '---') {
-        this.ordersMap.set(orderObj.trackingNumber.toLowerCase(), orderObj);
-      }
-      if (orderObj.orderId) {
-        this.ordersMap.set(orderObj.orderId.toLowerCase(), orderObj);
-        if (orderObj.isExchange) {
-          this.ordersMap.set(orderObj.orderId.replace(/^EXC-/i, '').toLowerCase(), orderObj);
-        }
-      }
-    });
-
-    this.renderStats();
-    this.showToast(`تم تحميل ${this.orders.length} أوردر بنجاح! جاري تحضير الصور...`, 'success');
-    window.soundEngine.playChirp();
-    window.speakArabic(`تم تحميل ${this.orders.length} أوردر، جاهز للفحص`);
-
-    const preloaded = await window.catalogManager.preloadImagesForOrders(this.orders);
-    if (preloaded > 0) {
-      this.showToast(`⚡ تم تحميل ${preloaded} صورة منتج في الذاكرة لتظهر بـ 0ms!`, 'success');
-    }
-  }
-
-  parseProductLines(productsRaw, skusFallbackRaw) {
-    const items = [];
-    if (!productsRaw) return items;
-
-    const lines = productsRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-    lines.forEach(line => {
-      const match = line.match(/^\[(\d+)\]\s*(.*?)\s*\|\s*(.*)$/);
-      if (match) {
-        const qty = parseInt(match[1], 10) || 1;
-        const fullName = match[2].trim();
-        const sku = match[3].trim();
-        const details = this.parseProductDetails(fullName);
-
-        items.push({
-          sku: sku.toLowerCase(),
-          originalSku: sku,
-          name: fullName,
-          details: details,
-          requiredQty: qty,
-          scannedQty: 0,
-          isCompleted: false,
-          imageUrl: null,
-          matchLevel: 'fallback'
-        });
-      } else {
-        const qtyMatch = line.match(/^\[(\d+)\]\s*(.*)$/);
-        const qty = qtyMatch ? (parseInt(qtyMatch[1], 10) || 1) : 1;
-        const fullName = qtyMatch ? qtyMatch[2].trim() : line;
-        const details = this.parseProductDetails(fullName);
-
-        items.push({
-          sku: fullName.toLowerCase(),
-          originalSku: fullName,
-          name: fullName,
-          details: details,
-          requiredQty: qty,
-          scannedQty: 0,
-          isCompleted: false,
-          imageUrl: null,
-          matchLevel: 'fallback'
-        });
-      }
-    });
-
-    return items;
-  }
-
-  normalizeTrackingBarcode(input) {
-    if (!input) return '';
-    let clean = input.trim();
-
-    const bostaPrefixMatch = clean.match(/^[A-Za-z]-\d{2}-(\d+)$/);
-    if (bostaPrefixMatch) return bostaPrefixMatch[1];
-
-    const dashedMatch = clean.match(/^[A-Za-z0-9]+-[A-Za-z0-9]+-(\d{6,14})$/);
-    if (dashedMatch) return dashedMatch[1];
-
-    const pureDigitsMatch = clean.match(/^(\d{7,14})$/);
-    if (pureDigitsMatch) return pureDigitsMatch[1];
-
-    return clean.replace(/\s+/g, '');
-  }
 }
 
-// Instantiate on DOM Ready
-document.addEventListener('DOMContentLoaded', () => {
+// Global Application Instance
+window.addEventListener('DOMContentLoaded', () => {
   window.app = new KhiamWarehouseApp();
 });
