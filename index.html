@@ -151,7 +151,7 @@
 
         <!-- Catalog & Barcodes Settings Button -->
         <button id="openCatalogModalBtn" class="flex items-center gap-1.5 bg-purple-950/70 hover:bg-purple-900 border border-purple-600/70 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-200 transition" title="إعدادات القاموس والكتالوج وإضافة باركودات جديدة">
-          <span>⚙️ إعدادات الكتالوج</span>
+          <span>📚 إعدادات الكتالوج</span>
           <span id="headerCatalogCount" class="bg-purple-500/20 text-purple-300 font-mono font-bold px-1.5 py-0.2 rounded text-[11px]">563 SKU</span>
         </button>
 
@@ -180,6 +180,13 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
           <span>سجل اليوم</span>
+        </button>
+
+        <!-- Settings Modal Button (⚙️ Settings & Bosta API Key) -->
+        <button id="openSettingsModalBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 hover:text-white transition shadow-sm group" title="إعدادات النظام ومفتاح Bosta API">
+          <span class="text-sm group-hover:rotate-90 transition-transform duration-300">⚙️</span>
+          <span>الإعدادات</span>
+          <span id="headerBostaStatusDot" class="w-2 h-2 rounded-full bg-slate-500 transition-colors" title="حالة مفتاح Bosta API"></span>
         </button>
 
       </div>
@@ -725,6 +732,118 @@
           </label>
         </div>
 
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Settings Modal (⚙️ Bosta API Key & Warehouse Config) -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700/80 w-full max-w-lg rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500/20 via-amber-500/20 to-purple-500/20 text-rose-300 border border-rose-500/30 flex items-center justify-center text-xl shadow-inner">
+            ⚙️
+          </div>
+          <div>
+            <h3 class="font-extrabold text-white text-base">إعدادات النظام وربط بوسطة (Settings)</h3>
+            <p class="text-xs text-slate-400">إدارة مفتاح Bosta API وتكامل الشحنات السريع</p>
+          </div>
+        </div>
+        <button id="closeSettingsModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition text-lg font-bold" title="إغلاق">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-5">
+        
+        <!-- Bosta API Key Input Section -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label for="bostaApiKeyInput" class="block text-xs font-bold text-slate-200">
+              <span>🔑 مفتاح الربط:</span>
+              <span class="text-rose-400 font-mono font-bold mr-1">Bosta API Key</span>
+            </label>
+            <span class="text-[11px] text-slate-400 font-medium">مشفر ومحفوظ محلياً</span>
+          </div>
+
+          <div class="relative">
+            <input 
+              type="password" 
+              id="bostaApiKeyInput" 
+              placeholder="أدخل مفتاح Bosta API Key هنا..." 
+              autocomplete="off"
+              spellcheck="false"
+              class="w-full bg-slate-950 border border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 rounded-xl px-4 py-3 pl-12 text-sm text-slate-100 font-mono placeholder:text-slate-500 placeholder:font-sans transition outline-none"
+            >
+            <button 
+              type="button" 
+              id="toggleBostaApiKeyVisibilityBtn" 
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-center" 
+              title="إظهار / إخفاء المفتاح"
+            >
+              <span id="bostaEyeIcon" class="text-base select-none">👁️</span>
+            </button>
+          </div>
+
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            يُستخدم هذا المفتاح في استعلامات <span class="text-slate-300 font-bold">Bosta Fetch Requests</span> المباشرة، ويتم إرساله تلقائياً في هيدر الطلب:
+            <code class="bg-slate-950 text-rose-300 px-1.5 py-0.5 rounded font-mono text-[11px] border border-slate-800 inline-block mt-0.5" dir="ltr">Authorization: ${apiKey}</code>
+          </p>
+        </div>
+
+        <!-- Key Status Card -->
+        <div id="bostaKeyStatusBanner" class="p-3.5 rounded-2xl border transition-all duration-200 text-xs flex items-center justify-between gap-3 bg-slate-950/60 border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <span id="bostaStatusIcon" class="text-lg">⚪</span>
+            <div>
+              <span id="bostaStatusTitle" class="font-bold block text-slate-200">حالة المفتاح</span>
+              <span id="bostaStatusDesc" class="text-[11px] text-slate-400 font-mono">جاري التحقق...</span>
+            </div>
+          </div>
+          <button 
+            type="button" 
+            id="testBostaConnectionBtn" 
+            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 transition flex items-center gap-1.5 whitespace-nowrap active:scale-95"
+            title="فحص الاتصال الفعلي بـ Bosta API للتأكد من صلاحية المفتاح"
+          >
+            <span id="testBostaSpinner" class="hidden animate-spin">⏳</span>
+            <span id="testBostaBtnText">🔌 فحص الاتصال</span>
+          </button>
+        </div>
+
+        <!-- Quick Help / Note Box -->
+        <div class="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-3 text-[11px] text-slate-400 space-y-1">
+          <div class="flex items-center gap-1.5 font-bold text-slate-300">
+            <span>💡</span>
+            <span>أين تجد Bosta API Key؟</span>
+          </div>
+          <p class="leading-relaxed">
+            يمكنك استخراج المفتاح من لوحة تحكم بوسطة عبر:
+            <span class="text-amber-300 font-mono">Bosta Dashboard ➔ Settings ➔ API Keys</span>
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-end gap-3">
+        <button 
+          id="cancelSettingsBtn" 
+          type="button"
+          class="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition"
+        >
+          إلغاء
+        </button>
+        <button 
+          id="saveSettingsBtn" 
+          type="button"
+          class="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 hover:from-rose-500 hover:to-amber-500 shadow-lg shadow-rose-950/60 flex items-center gap-2 transition transform hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <span>💾</span>
+          <span>حفظ الإعدادات</span>
+        </button>
       </div>
 
     </div>

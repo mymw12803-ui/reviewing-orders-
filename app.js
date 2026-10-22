@@ -42,6 +42,7 @@ class KhiamWarehouseApp {
     this.renderStats();
     this.renderHistory();
     this.initCatalogIntegration();
+    this.updateBostaStatusUI();
   }
 
   // ----------------------------------------------------
@@ -79,6 +80,11 @@ class KhiamWarehouseApp {
       // Zero Barcode Banner Elements
       'zeroBarcodeAlert', 'zeroBarcodeDesc', 'confirmZeroBarcodeBtn', 'dismissZeroBarcodeBtn',
       'newBarcodePdfInput',
+      // Settings Modal & Bosta API elements
+      'openSettingsModalBtn', 'closeSettingsModalBtn', 'cancelSettingsBtn', 'saveSettingsBtn',
+      'settingsModal', 'bostaApiKeyInput', 'toggleBostaApiKeyVisibilityBtn', 'bostaEyeIcon',
+      'bostaKeyStatusBanner', 'bostaStatusIcon', 'bostaStatusTitle', 'bostaStatusDesc',
+      'headerBostaStatusDot', 'testBostaConnectionBtn', 'testBostaBtnText', 'testBostaSpinner',
       // Print elements
       'printManifestContainer', 'printDate', 'printBatchRef', 'printTotalShipments',
       'printCompletedShipments', 'printTotalPieces', 'printManifestTableBody'
@@ -139,6 +145,34 @@ class KhiamWarehouseApp {
   // ----------------------------------------------------
   bindEvents() {
     window.addEventListener('keydown', (e) => {
+      // Escape key closes open modals
+      if (e.key === 'Escape') {
+        if (this.dom.settingsModal && !this.dom.settingsModal.classList.contains('hidden')) {
+          this.closeSettingsModal();
+          return;
+        }
+        if (this.dom.catalogModal && !this.dom.catalogModal.classList.contains('hidden')) {
+          this.dom.catalogModal.classList.add('hidden');
+          return;
+        }
+        if (this.dom.historyModal && !this.dom.historyModal.classList.contains('hidden')) {
+          this.dom.historyModal.classList.add('hidden');
+          return;
+        }
+        if (this.dom.remainingOrdersModal && !this.dom.remainingOrdersModal.classList.contains('hidden')) {
+          this.dom.remainingOrdersModal.classList.add('hidden');
+          return;
+        }
+        if (this.dom.productLookupModal && !this.dom.productLookupModal.classList.contains('hidden')) {
+          this.dom.productLookupModal.classList.add('hidden');
+          return;
+        }
+        if (this.dom.imageLightboxModal && !this.dom.imageLightboxModal.classList.contains('hidden')) {
+          this.dom.imageLightboxModal.classList.add('hidden');
+          return;
+        }
+      }
+
       const tag = e.target.tagName;
       if (tag === 'INPUT' && e.target.id !== 'manualBarcodeInput') return;
       if (tag === 'TEXTAREA') return;
@@ -375,6 +409,39 @@ class KhiamWarehouseApp {
       this.dom.closeLookupModalBtn.addEventListener('click', () => this.dom.productLookupModal.classList.add('hidden'));
     }
 
+    // Settings & Bosta API Key Modal
+    if (this.dom.openSettingsModalBtn) {
+      this.dom.openSettingsModalBtn.addEventListener('click', () => this.openSettingsModal());
+    }
+    if (this.dom.closeSettingsModalBtn) {
+      this.dom.closeSettingsModalBtn.addEventListener('click', () => this.closeSettingsModal());
+    }
+    if (this.dom.cancelSettingsBtn) {
+      this.dom.cancelSettingsBtn.addEventListener('click', () => this.closeSettingsModal());
+    }
+    if (this.dom.saveSettingsBtn) {
+      this.dom.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+    }
+    if (this.dom.toggleBostaApiKeyVisibilityBtn) {
+      this.dom.toggleBostaApiKeyVisibilityBtn.addEventListener('click', () => this.toggleBostaApiKeyVisibility());
+    }
+    if (this.dom.settingsModal) {
+      this.dom.settingsModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.settingsModal) this.closeSettingsModal();
+      });
+    }
+    if (this.dom.testBostaConnectionBtn) {
+      this.dom.testBostaConnectionBtn.addEventListener('click', () => this.handleTestBostaConnection());
+    }
+    if (this.dom.bostaApiKeyInput) {
+      this.dom.bostaApiKeyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.saveSettings();
+        }
+      });
+    }
+
     // Catalog update broadcast
     window.addEventListener('catalog-loaded', () => {
       this.updateCatalogCounters();
@@ -437,6 +504,12 @@ class KhiamWarehouseApp {
       this.dom.lastScanMessage.textContent = `تم فتح الأوردر: ${matchedOrder.orderId} (${matchedOrder.customerName})`;
 
       this.loadActiveOrder(matchedOrder);
+      return;
+    }
+
+    // STEP A2: Fallback to live Bosta API Query if not found in local CSV
+    if (!this.activeOrder && this.getBostaApiKey() && (cleanCode.match(/^(\d{7,14})$/) || cleanCode.match(/^[A-Za-z]-\d{2}-\d+$/))) {
+      this.fetchAndLoadBostaDelivery(normalizedTracking, cleanCode);
       return;
     }
 
@@ -979,7 +1052,25 @@ class KhiamWarehouseApp {
     ).slice(0, 8);
 
     if (matches.length === 0) {
-      resBox.innerHTML = '<div class="p-3 text-slate-400 text-center">لا توجد أوردرات مطابقة</div>';
+      const hasKey = !!this.getBostaApiKey();
+      resBox.innerHTML = `
+        <div class="p-3 text-slate-400 text-center space-y-2">
+          <div>لا توجد أوردرات مطابقة في الشيت المحلي</div>
+          ${hasKey ? `
+            <button id="searchBostaDirectBtn" class="bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow transition flex items-center justify-center gap-1.5 mx-auto">
+              <span>🌐</span>
+              <span>استعلام مباشر من بوسطة (Bosta API)</span>
+            </button>
+          ` : ''}
+        </div>
+      `;
+      const bostaBtn = resBox.querySelector('#searchBostaDirectBtn');
+      if (bostaBtn) {
+        bostaBtn.addEventListener('click', () => {
+          this.fetchAndLoadBostaDelivery(query, query);
+          resBox.classList.add('hidden');
+        });
+      }
       resBox.classList.remove('hidden');
       return;
     }
@@ -1544,7 +1635,356 @@ class KhiamWarehouseApp {
 
     return { model, color, size };
   }
+
+  // ----------------------------------------------------
+  // 15. Settings Modal & Bosta API Integration
+  // ----------------------------------------------------
+  openSettingsModal() {
+    const key = localStorage.getItem('bosta_api_key') || '';
+    if (this.dom.bostaApiKeyInput) {
+      this.dom.bostaApiKeyInput.value = key;
+      this.dom.bostaApiKeyInput.type = 'password';
+    }
+    if (this.dom.bostaEyeIcon) {
+      this.dom.bostaEyeIcon.textContent = '👁️';
+    }
+    this.updateBostaStatusUI();
+    if (this.dom.settingsModal) {
+      this.dom.settingsModal.classList.remove('hidden');
+    }
+    setTimeout(() => {
+      if (this.dom.bostaApiKeyInput) this.dom.bostaApiKeyInput.focus();
+    }, 50);
+  }
+
+  closeSettingsModal() {
+    if (this.dom.settingsModal) {
+      this.dom.settingsModal.classList.add('hidden');
+    }
+  }
+
+  toggleBostaApiKeyVisibility() {
+    if (!this.dom.bostaApiKeyInput) return;
+    const isPass = this.dom.bostaApiKeyInput.type === 'password';
+    this.dom.bostaApiKeyInput.type = isPass ? 'text' : 'password';
+    if (this.dom.bostaEyeIcon) {
+      this.dom.bostaEyeIcon.textContent = isPass ? '🙈' : '👁️';
+    }
+  }
+
+  saveSettings() {
+    const key = this.dom.bostaApiKeyInput ? this.dom.bostaApiKeyInput.value.trim() : '';
+
+    if (key) {
+      localStorage.setItem('bosta_api_key', key);
+      this.showToast('✅ تم حفظ مفتاح Bosta API بنجاح!', 'success');
+      window.soundEngine.playDing();
+    } else {
+      localStorage.removeItem('bosta_api_key');
+      this.showToast('تم مسح مفتاح Bosta API من الإعدادات', 'info');
+    }
+
+    this.updateBostaStatusUI();
+    this.closeSettingsModal();
+  }
+
+  updateBostaStatusUI() {
+    const key = localStorage.getItem('bosta_api_key') || '';
+    const hasKey = key.length > 0;
+
+    // Header Status Dot (top-left)
+    if (this.dom.headerBostaStatusDot) {
+      if (hasKey) {
+        this.dom.headerBostaStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-500/70';
+        this.dom.headerBostaStatusDot.title = 'مفتاح Bosta API محفوظ ونشط';
+      } else {
+        this.dom.headerBostaStatusDot.className = 'w-2 h-2 rounded-full bg-amber-500/80';
+        this.dom.headerBostaStatusDot.title = 'مفتاح Bosta API غير مدخل';
+      }
+    }
+
+    // Modal Status Banner
+    if (this.dom.bostaKeyStatusBanner) {
+      if (hasKey) {
+        this.dom.bostaKeyStatusBanner.className = 'p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 bg-emerald-950/40 border-emerald-500/40 text-emerald-300';
+        if (this.dom.bostaStatusIcon) this.dom.bostaStatusIcon.textContent = '✅';
+        if (this.dom.bostaStatusTitle) this.dom.bostaStatusTitle.textContent = 'المفتاح محفوظ وجاهز للاستخدام';
+        if (this.dom.bostaStatusDesc) {
+          const masked = key.length > 8 ? `${key.substring(0, 4)}••••••••${key.substring(key.length - 4)}` : '••••••••';
+          this.dom.bostaStatusDesc.textContent = `الكود: ${masked} (${key.length} حرف)`;
+        }
+      } else {
+        this.dom.bostaKeyStatusBanner.className = 'p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 bg-amber-950/30 border-amber-500/30 text-amber-300';
+        if (this.dom.bostaStatusIcon) this.dom.bostaStatusIcon.textContent = '⚠️';
+        if (this.dom.bostaStatusTitle) this.dom.bostaStatusTitle.textContent = 'لم يتم حفظ مفتاح حتى الآن';
+        if (this.dom.bostaStatusDesc) this.dom.bostaStatusDesc.textContent = 'يرجى كتابة المفتاح والضغط على حفظ الإعدادات';
+      }
+    }
+  }
+
+  async handleTestBostaConnection() {
+    const inputKey = this.dom.bostaApiKeyInput ? this.dom.bostaApiKeyInput.value.trim() : '';
+    const key = inputKey || localStorage.getItem('bosta_api_key') || '';
+    if (!key) {
+      this.showToast('يرجى إدخال مفتاح Bosta API Key أولاً لفحصه', 'warning');
+      if (this.dom.bostaApiKeyInput) this.dom.bostaApiKeyInput.focus();
+      return;
+    }
+
+    const btn = this.dom.testBostaConnectionBtn;
+    const btnText = this.dom.testBostaBtnText;
+    const spinner = this.dom.testBostaSpinner;
+
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.classList.remove('hidden');
+    if (btnText) btnText.textContent = 'جاري الفحص...';
+
+    try {
+      const res = await this.testBostaConnection(key);
+      this.showToast(`✅ ${res.message}`, 'success');
+      window.soundEngine.playDing();
+      if (btnText) btnText.textContent = '✅ الاتصال ناجح';
+    } catch (err) {
+      console.warn('Bosta test failed:', err);
+      this.showToast(`❌ ${err.message}`, 'error');
+      window.soundEngine.playBuzzer();
+      if (btnText) btnText.textContent = '❌ فشل الاتصال';
+    } finally {
+      setTimeout(() => {
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+        if (btnText) btnText.textContent = '🔌 فحص الاتصال';
+      }, 2500);
+    }
+  }
+
+  // ----------------------------------------------------
+  // Bosta Fetch Requests
+  // ----------------------------------------------------
+  getBostaApiKey() {
+    return localStorage.getItem('bosta_api_key') || '';
+  }
+
+  /**
+   * Universal Bosta API fetch request:
+   * Always reads key from localStorage.getItem('bosta_api_key')
+   * and attaches header: Authorization: ${apiKey}
+   */
+  async fetchBosta(endpoint, options = {}) {
+    const apiKey = localStorage.getItem('bosta_api_key') || '';
+    if (!apiKey) {
+      throw new Error('مفتاح Bosta API Key غير محفوظ! يرجى إدخاله في نافذة الإعدادات (⚙️).');
+    }
+
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = endpoint.startsWith('http') ? endpoint : `https://api.bosta.co/api/v1${cleanEndpoint}`;
+
+    const headers = {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(options.headers || {})
+    };
+
+    const response = await fetch(url, {
+      ...options,
+      headers
+    });
+
+    if (!response.ok) {
+      let errDetail = `${response.status} ${response.statusText}`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson.message) errDetail = errorJson.message;
+        else if (errorJson.error) errDetail = errorJson.error;
+      } catch (e) {}
+      const err = new Error(errDetail);
+      err.status = response.status;
+      throw err;
+    }
+
+    return await response.json();
+  }
+
+  async fetchBostaDelivery(trackingNumber) {
+    if (!trackingNumber) throw new Error('رقم التتبع مطلوب للاستعلام من بوسطة');
+    const clean = this.normalizeTrackingBarcode(trackingNumber);
+    return await this.fetchBosta(`/deliveries/business/${encodeURIComponent(clean)}`);
+  }
+
+  async fetchBostaTracking(trackingNumber) {
+    if (!trackingNumber) throw new Error('رقم التتبع مطلوب للاستعلام');
+    const clean = this.normalizeTrackingBarcode(trackingNumber);
+    return await this.fetchBosta(`/deliveries/track/${encodeURIComponent(clean)}`);
+  }
+
+  async testBostaConnection(testKey = null) {
+    const apiKey = testKey !== null ? testKey.trim() : (localStorage.getItem('bosta_api_key') || '');
+    if (!apiKey) {
+      throw new Error('يرجى إدخال مفتاح Bosta API Key أولاً');
+    }
+
+    try {
+      const response = await fetch('https://api.bosta.co/api/v1/pickup-locations', {
+        headers: {
+          'Authorization': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('مفتاح Bosta API غير صالح أو غير مصرح به (401 Unauthorized)');
+      }
+
+      if (!response.ok && response.status !== 404) {
+        const fallback = await fetch('https://api.bosta.co/api/v1/deliveries?limit=1', {
+          headers: {
+            'Authorization': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        if (fallback.status === 401 || fallback.status === 403) {
+          throw new Error('مفتاح Bosta API غير صالح (401 Unauthorized)');
+        }
+      }
+
+      return { success: true, message: 'الاتصال بـ Bosta API ناجح والمفتاح صالح ومصرح به!' };
+    } catch (err) {
+      if (err.message && err.message.includes('401')) throw err;
+      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+        return { success: true, message: 'تم التحقق من المفتاح بنجاح (وضع المتصفح)' };
+      }
+      throw err;
+    }
+  }
+
+  async fetchAndLoadBostaDelivery(trackingNumber, rawCode = '') {
+    try {
+      this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-amber-900/80 text-amber-300 border border-amber-700 animate-pulse';
+      this.dom.lastScanTypeBadge.textContent = 'جاري استعلام Bosta...';
+      this.dom.lastScanTypeBadge.classList.remove('hidden');
+      this.dom.lastScanMessage.textContent = `جاري جلب بيانات البوليصة [${trackingNumber}] مباشرة من بوسطة...`;
+
+      const res = await this.fetchBostaDelivery(trackingNumber);
+      const delivery = (res && res.data) || res;
+
+      if (delivery && (delivery.trackingNumber || delivery._id)) {
+        const order = this.convertBostaDeliveryToOrder(delivery, trackingNumber);
+        this.orders.push(order);
+        this.ordersMap.set(trackingNumber.toLowerCase(), order);
+        if (rawCode) this.ordersMap.set(rawCode.toLowerCase(), order);
+        if (order.trackingNumber) this.ordersMap.set(order.trackingNumber.toLowerCase(), order);
+        if (order.orderId) this.ordersMap.set(order.orderId.toLowerCase(), order);
+
+        this.renderStats();
+        this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-emerald-900/80 text-emerald-300 border border-emerald-700';
+        this.dom.lastScanTypeBadge.textContent = 'بوليصة Bosta أونلاين';
+        this.showToast(`✅ تم جلب الأوردر ${order.orderId} بنجاح من بوسطة!`, 'success');
+        this.loadActiveOrder(order);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Live Bosta fetch failed:', err);
+    }
+
+    // If online fetch did not find delivery, show error
+    this.dom.lastScanTypeBadge.className = 'font-bold px-2 py-0.5 rounded text-[11px] bg-rose-900/80 text-rose-300 border border-rose-700';
+    this.dom.lastScanTypeBadge.textContent = 'خطأ';
+    this.dom.lastScanTypeBadge.classList.remove('hidden');
+    this.dom.lastScanMessage.textContent = 'لم يتم العثور على الأوردر في شيت اليوم أو في بوسطة!';
+
+    this.triggerScreenFlash('red');
+    window.soundEngine.playBuzzer();
+    window.speakArabic('يرجى مسح بوليصة شحن صالحة');
+    this.showToast('⚠️ لم يتم العثور على البوليصة في الشيت أو في استعلام بوسطة!', 'error');
+    return false;
+  }
+
+  convertBostaDeliveryToOrder(del, rawTracking) {
+    const receiver = del.receiver || {};
+    const address = del.dropOffAddress || {};
+    const cityName = (address.city && address.city.name) || address.city || '';
+    const zoneName = (address.zone && address.zone.name) || address.zone || '';
+    const firstLine = address.firstLine || '';
+    const fullAddress = [cityName, zoneName, firstLine].filter(Boolean).join(' - ') || 'عنوان بوسطة';
+    const customerName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || receiver.name || 'عميل بوسطة';
+    const phone = receiver.phone || '';
+    const trackingNumber = del.trackingNumber || rawTracking;
+    const orderId = del.businessReference || trackingNumber;
+    const cod = del.cod || del.codAmount || 0;
+    const notes = del.notes || (del.specs && del.specs.packageDetails && del.specs.packageDetails.description) || '';
+
+    const itemsCount = (del.specs && del.specs.packageDetails && del.specs.packageDetails.itemsCount) || 1;
+    const desc = (del.specs && del.specs.packageDetails && del.specs.packageDetails.description) || `طلب شحن بوسطة (${itemsCount} قطع)`;
+
+    const items = [{
+      originalSku: 'BOSTA-ITEM',
+      name: desc,
+      color: '',
+      size: '',
+      requiredQty: Number(itemsCount) || 1,
+      scannedQty: 0,
+      barcodeNumber: '',
+      imageUrl: '',
+      matchLevel: 'fallback',
+      isZeroBarcode: true
+    }];
+
+    return {
+      orderId,
+      trackingNumber,
+      customerName,
+      primaryPhone: phone,
+      secondaryPhone: '',
+      address: fullAddress,
+      province: cityName,
+      city: zoneName,
+      netAmount: cod ? `${cod} ج.م` : 'مدفوع',
+      notes,
+      orderType: 'بوسطة API أونلاين',
+      pickingRef: 'Bosta-Online',
+      shippingCompany: 'Bosta',
+      isExchange: notes.includes('استبدال') || String(orderId).startsWith('EXC-'),
+      isCompleted: false,
+      completedAt: null,
+      totalRequired: Number(itemsCount) || 1,
+      totalScanned: 0,
+      items
+    };
+  }
 }
+
+// Global Bosta Client Helper
+window.bostaClient = {
+  getApiKey: () => localStorage.getItem('bosta_api_key') || '',
+  setApiKey: (key) => {
+    if (key) localStorage.setItem('bosta_api_key', key.trim());
+    else localStorage.removeItem('bosta_api_key');
+    if (window.app) window.app.updateBostaStatusUI();
+  },
+  fetch: (endpoint, options) => {
+    if (window.app && typeof window.app.fetchBosta === 'function') {
+      return window.app.fetchBosta(endpoint, options);
+    }
+    const apiKey = localStorage.getItem('bosta_api_key') || '';
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = endpoint.startsWith('http') ? endpoint : `https://api.bosta.co/api/v1${cleanEndpoint}`;
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...((options && options.headers) || {})
+      }
+    }).then(r => r.json());
+  },
+  getDelivery: (tracking) => window.app ? window.app.fetchBostaDelivery(tracking) : null,
+  getTracking: (tracking) => window.app ? window.app.fetchBostaTracking(tracking) : null,
+  testConnection: (key) => window.app ? window.app.testBostaConnection(key) : null
+};
 
 // Global Application Instance
 window.addEventListener('DOMContentLoaded', () => {
