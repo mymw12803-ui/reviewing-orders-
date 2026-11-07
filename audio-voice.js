@@ -255,38 +255,55 @@ class SoundEngine {
 // ----------------------------------------------------
 // Natural Arabic Voice Engine (Web Speech API)
 // ----------------------------------------------------
+// Best quality: Microsoft Edge ships free neural "Natural" Arabic voices
+// (Salma / Shakir - Egypt, Zariyah / Hamed - Saudi, ...). Chrome on Windows only
+// has the old robotic desktop voices, so the app recommends Edge when no natural voice exists.
+const VOICE_PREF_KEY = 'khiam_voice_name';
+const VOICE_RATE_KEY = 'khiam_voice_rate';
 let cachedBestArabicVoice = null;
 
+function readPref(key, fallback) {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; }
+}
+function writePref(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) {}
+}
+
+function getArabicVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  return (window.speechSynthesis.getVoices() || [])
+    .filter(v => v.lang && (v.lang.toLowerCase().startsWith('ar') || /arabic/i.test(v.name || '')));
+}
+
+function isNaturalVoice(v) {
+  return /natural|online|neural/i.test(v.name || '');
+}
+
+// Higher = better. Egyptian neural voices first (warehouse staff are Egyptian).
+function scoreArabicVoice(v) {
+  const name = (v.name || '').toLowerCase();
+  const lang = (v.lang || '').toLowerCase();
+  let score = 0;
+  if (isNaturalVoice(v)) score += 100;
+  if (lang === 'ar-eg') score += 30;
+  else if (lang === 'ar-sa') score += 20;
+  if (/salma/.test(name)) score += 8;      // clear female Egyptian neural voice
+  if (/shakir/.test(name)) score += 6;
+  if (/google/.test(name)) score += 50;    // Chrome's online Arabic voice (better than desktop SAPI)
+  if (!v.localService) score += 5;
+  return score;
+}
+
 function resolveBestArabicVoice() {
-  if (!('speechSynthesis' in window)) return null;
-  const voices = window.speechSynthesis.getVoices() || [];
+  const voices = getArabicVoices();
   if (voices.length === 0) return null;
 
-  // Filter all Arabic voices
-  const arabicVoices = voices.filter(v => v.lang && (v.lang.startsWith('ar') || v.lang.includes('Arabic')));
-
-  if (arabicVoices.length === 0) return null;
-
-  // Priority 1: Natural / Online voices (e.g. Microsoft Salma Online (Natural) or Shakir)
-  const naturalVoice = arabicVoices.find(v => {
-    const name = (v.name || '').toLowerCase();
-    return name.includes('natural') || name.includes('online');
-  });
-  if (naturalVoice) return naturalVoice;
-
-  // Priority 2: Google Arabic voices (Google العربية / Google Arabic)
-  const googleVoice = arabicVoices.find(v => (v.name || '').toLowerCase().includes('google'));
-  if (googleVoice) return googleVoice;
-
-  // Priority 3: Egyptian (ar-EG) or Saudi (ar-SA)
-  const egVoice = arabicVoices.find(v => v.lang === 'ar-EG');
-  if (egVoice) return egVoice;
-
-  const saVoice = arabicVoices.find(v => v.lang === 'ar-SA');
-  if (saVoice) return saVoice;
-
-  // Priority 4: Any Arabic voice
-  return arabicVoices[0];
+  const preferred = readPref(VOICE_PREF_KEY, 'auto');
+  if (preferred && preferred !== 'auto') {
+    const chosen = voices.find(v => v.name === preferred);
+    if (chosen) return chosen;
+  }
+  return voices.slice().sort((a, b) => scoreArabicVoice(b) - scoreArabicVoice(a))[0];
 }
 
 // Pre-load voices on startup
@@ -294,7 +311,30 @@ if ('speechSynthesis' in window) {
   cachedBestArabicVoice = resolveBestArabicVoice();
   window.speechSynthesis.onvoiceschanged = () => {
     cachedBestArabicVoice = resolveBestArabicVoice();
+    window.dispatchEvent(new CustomEvent('voices-changed'));
   };
+}
+
+/**
+ * Make text easier for Arabic TTS: spell sizes in Arabic, drop label codes like (C1)/(e1),
+ * and avoid symbols that voices read out literally.
+ */
+const SIZE_WORDS = {
+  'XS': 'إكس سمول', 'S': 'سمول', 'M': 'ميديم', 'L': 'لارج', 'XL': 'إكس لارج',
+  'XXL': 'دبل إكس لارج', '2XL': 'دبل إكس لارج', 'XXXL': 'تريبل إكس لارج', '3XL': 'تريبل إكس لارج',
+  '4XL': 'فور إكس لارج', '5XL': 'فايف إكس لارج', '6XL': 'سيكس إكس لارج'
+};
+function prepareArabicSpeech(text) {
+  if (!text) return '';
+  let t = String(text);
+  t = t.replace(/\([^)]*\)/g, ' ');                       // (C1), (e1), (S2) label codes
+  t = t.replace(/\b(\d?X{0,3}[SML]|\dXL|X{1,3}L)\b/gi, m => SIZE_WORDS[m.toUpperCase()] || m);
+  t = t.replace(/[\/|\_*#]+/g, '، ');
+  t = t.replace(/\s*-\s*/g, ' ');
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  t = t.replace(/\s+([،,])/g, '$1');
+  t = t.replace(/([،,])\s*[،,]+/g, '$1');
+  return t;
 }
 
 /**
@@ -307,15 +347,17 @@ function speakArabic(text) {
   try {
     window.speechSynthesis.cancel(); // clear previous utterance for zero lag
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-EG';
-    utterance.rate = 1.1; // crisp and agile pace for warehouse picking
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-
     if (!cachedBestArabicVoice) {
       cachedBestArabicVoice = resolveBestArabicVoice();
     }
+
+    const utterance = new SpeechSynthesisUtterance(prepareArabicSpeech(text));
+    utterance.lang = cachedBestArabicVoice ? cachedBestArabicVoice.lang : 'ar-EG';
+    // Natural voices sound best at normal speed; old desktop voices get a touch slower for clarity
+    const userRate = parseFloat(readPref(VOICE_RATE_KEY, '1')) || 1;
+    utterance.rate = cachedBestArabicVoice && !isNaturalVoice(cachedBestArabicVoice) ? userRate * 0.95 : userRate;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
     if (cachedBestArabicVoice) {
       utterance.voice = cachedBestArabicVoice;
     }
@@ -325,6 +367,21 @@ function speakArabic(text) {
     console.warn('SpeechSynthesis error:', err);
   }
 }
+
+window.arabicVoice = {
+  list: getArabicVoices,
+  current: () => cachedBestArabicVoice,
+  isNatural: isNaturalVoice,
+  getPreferred: () => readPref(VOICE_PREF_KEY, 'auto'),
+  setPreferred(name) {
+    writePref(VOICE_PREF_KEY, name || 'auto');
+    cachedBestArabicVoice = resolveBestArabicVoice();
+  },
+  getRate: () => parseFloat(readPref(VOICE_RATE_KEY, '1')) || 1,
+  setRate(rate) { writePref(VOICE_RATE_KEY, String(rate)); },
+  isEdge: () => /Edg\//.test(navigator.userAgent),
+  prepare: prepareArabicSpeech
+};
 
 // Global Instances
 window.soundEngine = new SoundEngine();

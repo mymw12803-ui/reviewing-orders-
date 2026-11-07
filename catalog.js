@@ -126,6 +126,11 @@ class CatalogManager {
         }
 
         await this.db.transaction('rw', this.db.barcodes, this.db.products, this.db.meta, async () => {
+          // New dictionary version replaces stale rows (e.g. the old '00000000' pseudo-SKU with garbled PDF name)
+          if (metaSeeded && metaSeeded.value !== dict.version) {
+            await this.db.barcodes.clear();
+            await this.db.products.clear();
+          }
           await this.db.barcodes.bulkPut(barcodeEntries);
           await this.db.products.bulkPut(productEntries);
           await this.db.meta.put({ key: 'seededVersion', value: dict.version });
@@ -202,7 +207,7 @@ class CatalogManager {
 
       productRows.forEach(row => {
         const cleanSku = (row.sku || '').trim().toLowerCase();
-        if (!cleanSku) return;
+        if (!cleanSku || /^0+$/.test(cleanSku)) return;
 
         this.skuMap.set(cleanSku, row);
         this.memoryVariants.set(cleanSku, row);
@@ -248,8 +253,8 @@ class CatalogManager {
     if (!rawCode) return { type: 'unknown', code: '' };
     const code = rawCode.trim();
 
-    // 1. Zero barcode special case
-    if (/^0{6,10}$/.test(code)) {
+    // 1. Zero barcode special case (damaged / legacy labels scan as zeros)
+    if (/^0{4,14}$/.test(code)) {
       return {
         type: 'zero_barcode',
         barcode: code,
@@ -334,22 +339,24 @@ class CatalogManager {
 
       const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      const items = content.items.map(it => it.str.trim()).filter(Boolean);
+      const lines = this.reconstructLabelLines(content.items);
 
-      if (items.length < 2) continue;
+      if (lines.length < 2) continue;
 
-      const sku = items[0];
       let barcode = '';
-      for (let j = items.length - 1; j >= 0; j--) {
-        const m = items[j].match(/\b\d{8,9}\b/);
+      for (let j = lines.length - 1; j >= 0; j--) {
+        const m = lines[j].match(/\b\d{8,9}\b/);
         if (m) {
           barcode = m[0];
           break;
         }
       }
 
-      const nameLines = items.slice(1, items.length - 1);
-      const rawName = nameLines.join(' ');
+      // Labels of variants without a SKU print 00000000 in the SKU slot: key them by barcode
+      const labelSku = lines[0].replace(/\s+/g, '');
+      const sku = /^0+$/.test(labelSku) ? `NOSKU-${barcode}` : labelSku;
+
+      const rawName = lines.slice(1, lines.length - 1).join(' ');
       const isZero = /^0+$/.test(barcode);
 
       // Check if already in Shopify catalog for clean Arabic title & image
@@ -370,7 +377,8 @@ class CatalogManager {
         modelPrefix: this.extractModelPrefix(sku.toLowerCase()),
         imageUrl: imageUrl,
         price: price,
-        isZero: isZero,
+        // Keep the legacy flag: old printed labels of this SKU may still scan as zeros
+        isZero: isZero || !!(shopifyItem && (shopifyItem.isZero || shopifyItem.isZeroBarcode)),
         updatedAt: new Date().toISOString()
       };
 
@@ -420,6 +428,51 @@ class CatalogManager {
     if (!domain) return;
     this.shopDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
     localStorage.setItem('khiam_shop_domain', this.shopDomain);
+  }
+
+  /**
+   * PDF.js returns Arabic label text as separate glyphs in visual (reversed) order.
+   * Rebuild readable lines: group by row, read right-to-left, insert spaces at gaps,
+   * and NFKC-normalize presentation forms back to regular Arabic letters.
+   */
+  reconstructLabelLines(items) {
+    const rows = [];
+    items.filter(it => it.str && it.str.trim()).forEach(it => {
+      const y = it.transform[5];
+      const h = Math.abs(it.transform[3]) || it.height || 8;
+      let row = rows.find(r => Math.abs(r.y - y) < h * 0.5);
+      if (!row) { row = { y, h, parts: [] }; rows.push(row); }
+      row.parts.push({ x: it.transform[4], w: it.width, str: it.str.normalize('NFKC') });
+    });
+    rows.sort((a, b) => b.y - a.y);
+    return rows.map(row => {
+      row.parts.sort((a, b) => (b.x + b.w) - (a.x + a.w));
+      let line = '';
+      let prevLeft = null;
+      row.parts.forEach(p => {
+        if (prevLeft !== null && prevLeft - (p.x + p.w) > row.h * 0.15) line += ' ';
+        line += p.str;
+        prevLeft = p.x;
+      });
+      return line.replace(/\s+/g, ' ').trim();
+    }).filter(Boolean);
+  }
+
+  /**
+   * Variants without a SKU (keyed NOSKU-<barcode>) reach orders with an empty SKU:
+   * find them by product name instead, ignoring word order and punctuation.
+   */
+  findSkuByName(productName) {
+    if (!productName) return '';
+    const words = s => new Set(s.normalize('NFKC').replace(/[أإآ]/g, 'ا').split(/[\s/()\-|]+/)
+      .map(w => w.replace(/[^؀-ۿa-z0-9]/gi, '').toLowerCase()).filter(Boolean));
+    const target = words(productName.split('|')[0]);
+    for (const [key, item] of this.skuMap) {
+      if (!key.startsWith('nosku-')) continue;
+      const w = words(item.name || `${item.title} ${item.variantTitle}`);
+      if (w.size === target.size && [...w].every(t => target.has(t))) return key;
+    }
+    return '';
   }
 
   extractModelPrefix(sku) {
@@ -594,6 +647,7 @@ class CatalogManager {
         sku: match.originalSku || rawSku,
         variantTitle: match.variantTitle || '',
         barcode: match.barcode || '',
+        isZeroBarcode: !!(match.isZeroBarcode || match.isZero),
         matchLevel: 'exact',
         confidence: 100
       };

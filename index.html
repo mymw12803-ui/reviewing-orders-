@@ -212,14 +212,14 @@
           <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
           </svg>
-          <span>📂 رفع شيت أوردرات اليوم (CSV)</span>
-          <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+          <span>📂 رفع شيت/شيتات أوردرات اليوم (CSV)</span>
+          <input type="file" id="csvFileInput" accept=".csv" multiple class="hidden">
         </label>
 
         <!-- Current File Indicator -->
         <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-xl text-xs">
-          <span class="text-slate-400">الملف الحالي:</span>
-          <span id="csvFileName" class="font-mono font-bold text-amber-300 truncate max-w-[220px]">لم يتم اختيار ملف بعد</span>
+          <span class="text-slate-400">الملفات الحالية:</span>
+          <span id="csvFileName" class="font-mono font-bold text-amber-300 truncate max-w-[320px]" title="">لم يتم اختيار ملف بعد</span>
         </div>
       </div>
 
@@ -227,7 +227,7 @@
       <div class="flex items-center gap-2 bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-2xl text-xs font-bold shadow-inner">
         <span class="text-base">✅</span>
         <div class="leading-tight">
-          <span class="block text-white font-extrabold">قاموس باركودات المنتجات (563 SKU) وصور شوبيفاي محفوظة ومفعلة تلقائياً</span>
+          <span class="block text-white font-extrabold">قاموس باركودات المنتجات (570 SKU - ملصقات جديدة) وصور شوبيفاي محفوظة ومفعلة تلقائياً</span>
           <span class="text-[11px] text-emerald-400/90 font-normal">IndexedDB نشط | مسح الباركود الرقمي يترجم لـ SKU في 0ms</span>
         </div>
       </div>
@@ -239,6 +239,14 @@
       
       <!-- Stats Counters -->
       <div class="flex items-center flex-wrap gap-2 lg:gap-3 text-xs">
+        <!-- Scanned orders counter (unique orders scanned today) -->
+        <div id="scannedOrdersCounterBox" class="flex items-center gap-2 bg-gradient-to-r from-cyan-950 to-emerald-950 border-2 border-cyan-500/60 px-3.5 py-1.5 rounded-xl font-black shadow-lg shadow-cyan-950/40" title="عدد الأوردرات المختلفة التي تم مسح بوليصتها اليوم">
+          <span class="text-cyan-200">🧾 تم مسح</span>
+          <span id="scannedOrdersCount" class="text-white font-mono text-xl leading-none">0</span>
+          <span class="text-cyan-200">أوردر</span>
+          <button id="resetScannedOrdersBtn" type="button" class="mr-1 text-[10px] font-bold text-slate-400 hover:text-rose-300 underline" title="تصفير العداد">تصفير</button>
+        </div>
+
         <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 px-3 py-1.5 rounded-xl font-bold">
           <span class="text-slate-400">📊 إجمالي الشيت:</span>
           <span id="compactTotalOrders" class="text-amber-400 font-mono text-sm font-black">0</span>
@@ -282,6 +290,23 @@
           </div>
         </div>
       </div>
+
+      <!-- Product Barcode Lookup Field (scan product first) -->
+      <form id="productScanForm" class="flex gap-2">
+        <input
+          type="text"
+          id="productBarcodeInput"
+          placeholder="📦 امسح باركود المنتج هنا..."
+          class="bg-slate-900 border border-cyan-700 focus:border-cyan-400 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition font-mono w-48"
+          autocomplete="off"
+        >
+        <button
+          type="submit"
+          class="bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-cyan-500 transition"
+        >
+          جلب المنتج
+        </button>
+      </form>
 
       <!-- Manual Barcode Input Fallback (Compact) -->
       <form id="manualScanForm" class="flex gap-2">
@@ -460,7 +485,10 @@
         <!-- Overall Progress Bar -->
         <div class="space-y-1.5">
           <div class="flex justify-between text-xs text-slate-400 font-semibold">
-            <span>نسبة استيفاء المنتجات</span>
+            <span class="flex items-center gap-2">
+              <span>نسبة استيفاء المنتجات</span>
+              <button id="speakMissingBtn" type="button" class="bg-slate-800 hover:bg-cyan-800 border border-slate-600 hover:border-cyan-400 text-cyan-200 px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition" title="نطق أسماء الأصناف الناقصة">🔊 ردد الناقص</button>
+            </span>
             <span id="progressText">0 من 0 قطع</span>
           </div>
           <div class="w-full h-3.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
@@ -632,6 +660,20 @@
     </div>
   </div>
 
+  <!-- Damaged / Zero Barcode Picker Modal (اختيار القطعة عند مسح باركود تالف) -->
+  <div id="zeroPickerModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-purple-500/60 w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      <div class="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <h3 class="font-extrabold text-white text-base">⚠️ باركود تالف (أصفار) — اختر القطعة التي في يدك</h3>
+          <p class="text-xs text-slate-400 mt-0.5">اضغط على صورة المنتج الصحيح لاحتسابه</p>
+        </div>
+        <button id="closeZeroPickerBtn" class="text-slate-400 hover:text-white p-2 rounded-xl text-lg font-bold">✕</button>
+      </div>
+      <div id="zeroPickerList" class="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto max-h-[70vh]"></div>
+    </div>
+  </div>
+
   <!-- Settings / Catalog & Barcodes Modal -->
   <div id="catalogModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-3xl shadow-2xl flex flex-col overflow-hidden">
@@ -756,7 +798,25 @@
       </div>
 
       <!-- Modal Body -->
-      <div class="p-6 space-y-5">
+      <div class="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+
+        <!-- Arabic Voice Section -->
+        <div class="space-y-2 bg-slate-950/50 border border-cyan-800/50 rounded-2xl p-3.5">
+          <div class="flex items-center justify-between gap-2">
+            <label for="voiceSelect" class="block text-xs font-bold text-slate-200">🗣️ صوت النطق العربي</label>
+            <span id="voiceQualityBadge" class="text-[11px] font-bold text-slate-400"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="voiceSelect" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"></select>
+            <button id="testVoiceBtn" type="button" class="px-3 py-2 rounded-xl text-xs font-bold bg-cyan-700 hover:bg-cyan-600 text-white border border-cyan-500 transition whitespace-nowrap">▶ تجربة</button>
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-slate-300">
+            <label for="voiceRateInput" class="font-bold whitespace-nowrap">السرعة:</label>
+            <input id="voiceRateInput" type="range" min="0.7" max="1.4" step="0.05" value="1" class="flex-1 accent-cyan-500">
+            <span id="voiceRateValue" class="font-mono w-10 text-center">1.00</span>
+          </div>
+          <p id="voiceHint" class="text-[11px] leading-relaxed text-amber-200/90 hidden"></p>
+        </div>
         
         <!-- Bosta API Key Input Section -->
         <div class="space-y-2">
@@ -919,9 +979,9 @@
   </div>
 
   <!-- Scripts: Built-in Dictionary first, then Audio, Catalog, and Main App Engine -->
-  <script src="builtin_barcode_map.js"></script>
-  <script src="audio-voice.js"></script>
-  <script src="catalog.js"></script>
-  <script src="app.js"></script>
+  <script src="builtin_barcode_map.js?v=4.0"></script>
+  <script src="audio-voice.js?v=4.0"></script>
+  <script src="catalog.js?v=4.0"></script>
+  <script src="app.js?v=4.0"></script>
 </body>
 </html>
